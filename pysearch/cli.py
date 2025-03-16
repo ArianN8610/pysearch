@@ -1,6 +1,7 @@
 import click
 
-from .utils import search_in_names, display_results
+from .utils import display_results
+from .searcher import search_in_names, search_in_file_contents
 
 
 @click.command()
@@ -12,13 +13,14 @@ from .utils import search_in_names, display_results
 )
 @click.option('-f', '--files', is_flag=True, help='Search only in file names')
 @click.option('-d', '--directories', is_flag=True, help='Search only in directory names')
-def search(query: str, path: str, files: bool, directories: bool):
+@click.option('-c', '--content', is_flag=True, help='Search only in file contents')
+def search(query: str, path: str, files: bool, directories: bool, content: bool):
     """Get query, search and display results"""
 
-    if True not in (files, directories):
-        files = directories = True  # If no option is selected, search all
+    if True not in (files, directories, content):
+        files = directories = content = True  # If no option is selected, search all
 
-    # Search in file names and directory names separately
+    # Search in file names and directory names and files content separately
     if files:
         filename_results = search_in_names(path, query)
         display_results(filename_results, 'Files', 'file')
@@ -31,8 +33,14 @@ def search(query: str, path: str, files: bool, directories: bool):
     else:
         dir_results = []
 
+    if content:
+        content_results = search_in_file_contents(path, query)
+        display_results(content_results, 'Contents', 'content')
+    else:
+        content_results = []
+
     # Display total of results
-    if results:=(filename_results + dir_results):
+    if results:=(filename_results + dir_results + content_results):
         click.echo(click.style(f'\nTotal results: {len(results)}', fg='cyan'))
     else:
         click.echo(click.style('No results found', fg='red'))
