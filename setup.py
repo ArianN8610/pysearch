@@ -17,5 +17,6 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.6",
-    install_requires=["click==8.1.8"]
+    install_requires=["click==8.1.8"],
+    entry_points={"console_scripts": ["pysearch=pysearch.cli:search"]}
 )
