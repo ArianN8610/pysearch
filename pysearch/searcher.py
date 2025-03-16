@@ -11,8 +11,8 @@ def search_in_names(base_path: str, query: str, is_file: bool = True) -> list[st
 
     for p in base_path.rglob('*'):
         if query in p.name and (p.is_file() if is_file else p.is_dir()):
-            p = str(p).replace(query, click.style(query, fg='green'))  # Specify the found part
-            matches.append(p)
+            p_name = str(p.name).replace(query, click.style(query, fg='green'))  # Specify the found part
+            matches.append(str(p.parent) + '\\' + p_name)
 
     return matches
 
