@@ -1,3 +1,4 @@
+import re
 import click
 from pathlib import Path
 
@@ -38,9 +39,11 @@ def search_in_file_contents(base_path: str, query: str, case_sensitive: bool) ->
 
                     if query in line_content:
                         highlighted_snippet = highlight_matches(line_content.strip(), query, case_sensitive)
+                        count_query = len(re.findall(query, line_content))  # Count query in each line
+
                         matches.append(
                             click.style(file_path, fg='blue')
-                            + click.style(f' (Line {num}): ', fg='magenta')
+                            + click.style(f' (Line {num}) (Repeated {count_query} time(s)): ', fg='magenta')
                             + highlighted_snippet
                         )
             except Exception:
