@@ -2,9 +2,15 @@ import re
 import click
 
 
-def highlight_matches(line, query, context=20):
+def highlight_matches(line, query, case_sensitive, context=20):
     """Highlight matches and truncate long lines with proper handling"""
-    matches = list(re.finditer(re.escape(query), line, re.IGNORECASE))  # Find all matches
+
+    # Find all matches
+    if case_sensitive:
+        matches = list(re.finditer(re.escape(query), line))
+    else:
+        matches = list(re.finditer(re.escape(query), line, re.IGNORECASE))
+
     if not matches:
         return None  # If there is no match, return None
 
