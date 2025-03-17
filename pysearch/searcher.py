@@ -5,14 +5,20 @@ from pathlib import Path
 from .utils import highlight_matches
 
 
-def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: bool, include: tuple[str],
-                    exclude: tuple[str], ext: tuple[str] = tuple(), is_file: bool = True) -> list[str]:
+def search_in_names(
+        base_path: str, query: str, case_sensitive: bool,
+        regex: bool, include: tuple[str], exclude: tuple[str],
+        whole_word: bool, ext: tuple[str] = tuple(), is_file: bool = True
+) -> list[str]:
     """Search for file and folder names"""
     base_path = Path(base_path)
     matches = []
 
     if not regex:
         query = re.escape(query)  # If regex is disabled, convert query to plain text
+
+    if whole_word:
+        query = rf'\b{query}\b'  # Ensure search for whole words
 
     flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
@@ -31,10 +37,11 @@ def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: boo
         if exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths):
             continue
 
-        if re.search(query, p.name, flags) and ((is_file and p.is_file()) or (not is_file and p.is_dir())):
-            if is_file and ext and p.suffix[1:] not in ext:
-                continue  # Prevent unnecessary continuation in case of type mismatch
+        # Prevent unnecessary continuation in case of type mismatch
+        if is_file and ext and p.suffix[1:] not in ext:
+            continue
 
+        if re.search(query, p.name, flags) and ((is_file and p.is_file()) or (not is_file and p.is_dir())):
             # Specify the found part
             highlighted_name = re.sub(query, lambda m: click.style(m.group(), fg='green'), p.name, flags=flags)
             matches.append(f'{p.parent}\\{highlighted_name}')
@@ -42,14 +49,20 @@ def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: boo
     return matches
 
 
-def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ext: tuple[str],
-                            regex: bool, include: tuple[str], exclude: tuple[str]) -> list[str]:
+def search_in_file_contents(
+        base_path: str, query: str, case_sensitive: bool,
+        ext: tuple[str], regex: bool, include: tuple[str],
+        exclude: tuple[str], whole_word: bool
+) -> list[str]:
     """Search the contents of files"""
     base_path = Path(base_path)
     matches = []
 
     if not regex:
         query = re.escape(query)  # Convert to plain text
+
+    if whole_word:
+        query = rf'\b{query}\b'  # Ensure search for whole words
 
     flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
@@ -73,8 +86,10 @@ def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ex
 
         try:
             for num, line in enumerate(file_path.read_text(encoding='utf-8', errors='ignore').splitlines(), 1):
+                line = line.strip()
+
                 if re.search(query, line, flags):
-                    highlighted_snippet = highlight_matches(line.strip(), query, case_sensitive)
+                    highlighted_snippet = highlight_matches(line, query, case_sensitive, regex, whole_word)
                     count_query = len(list(re.finditer(query, line, flags)))  # Count the number of repetitions
 
                     matches.append(

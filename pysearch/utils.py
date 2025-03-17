@@ -2,13 +2,13 @@ import re
 import click
 
 
-def highlight_matches(line: str, query: str, case_sensitive: bool, regex: bool = False,
+def highlight_matches(line: str, query: str, case_sensitive: bool, regex: bool, whole_word: bool,
                       context: bool = 20) -> str | None:
     """Highlight matches and truncate long lines with proper handling"""
 
     flags = 0 if case_sensitive else re.IGNORECASE
 
-    if not regex:
+    if not regex and not whole_word:
         query = re.escape(query)  # If regex is disabled, use escape to search for regular text
 
     # Find all matches
