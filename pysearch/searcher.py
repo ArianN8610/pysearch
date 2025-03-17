@@ -5,9 +5,9 @@ from pathlib import Path
 from .utils import highlight_matches
 
 
-def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: bool, ext: tuple[str] = tuple(),
-                    is_file: bool = True) -> list[str]:
-    """Search for file names"""
+def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: bool, include: tuple[str],
+                    exclude: tuple[str], ext: tuple[str] = tuple(), is_file: bool = True) -> list[str]:
+    """Search for file and folder names"""
     base_path = Path(base_path)
     matches = []
 
@@ -16,19 +16,34 @@ def search_in_names(base_path: str, query: str, case_sensitive: bool, regex: boo
 
     flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
+    # Convert include and exclude paths to `Path`
+    include_paths = [Path(p).resolve() for p in include]
+    exclude_paths = [Path(p).resolve() for p in exclude]
+
     for p in base_path.rglob('*'):
+        p_resolved = p.resolve()  # Actual file or folder path
+
+        # If include is given, at least one of them must be present in the name
+        if include and not any(p_resolved.is_relative_to(inc) for inc in include_paths):
+            continue
+
+        # If exclude is given, none should be in the name
+        if exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths):
+            continue
+
         if re.search(query, p.name, flags) and ((is_file and p.is_file()) or (not is_file and p.is_dir())):
             if is_file and ext and p.suffix[1:] not in ext:
                 continue  # Prevent unnecessary continuation in case of type mismatch
 
-            p_name = re.sub(query, lambda m: click.style(m.group(), fg='green'), p.name, flags=flags)  # Specify the found part
-            matches.append(f'{p.parent}\\{p_name}')
+            # Specify the found part
+            highlighted_name = re.sub(query, lambda m: click.style(m.group(), fg='green'), p.name, flags=flags)
+            matches.append(f'{p.parent}\\{highlighted_name}')
 
     return matches
 
 
 def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ext: tuple[str],
-                            regex: bool) -> list[str]:
+                            regex: bool, include: tuple[str], exclude: tuple[str]) -> list[str]:
     """Search the contents of files"""
     base_path = Path(base_path)
     matches = []
@@ -38,7 +53,21 @@ def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ex
 
     flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
+    # Convert include and exclude paths to `Path`
+    include_paths = [Path(p).resolve() for p in include]
+    exclude_paths = [Path(p).resolve() for p in exclude]
+
     for file_path in base_path.rglob('*'):
+        p_resolved = file_path.resolve()  # Actual file path
+
+        # If include is given, at least one of them must be present in the list
+        if include and not any(p_resolved.is_relative_to(inc) for inc in include_paths):
+            continue
+
+        # If exclude is given, none should be in the list
+        if exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths):
+            continue
+
         if not file_path.is_file() or (ext and file_path.suffix[1:] not in ext):
             continue
 
