@@ -9,15 +9,16 @@ from .searcher import search_in_names, search_in_file_contents
 @click.option(
     '-p', '--path',
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
-    default='.', help='Path to search results'
+    default='.', show_default=True,
+    help='Base directory to search in.'
 )
-@click.option('-f', '--files', is_flag=True, help='Search only in file names')
-@click.option('-d', '--directories', is_flag=True, help='Search only in directory names')
-@click.option('-c', '--content', is_flag=True, help='Search only in file contents')
-@click.option('-cs', '--case-sensitive', is_flag=True, help='Case sensitive in searches')
-@click.option('--ext', type=click.STRING, default='',
-              help='Only display files with the specified extension (e.g. "py,js")')
-def search(query: str, path: str, files: bool, directories: bool, content: bool, case_sensitive: bool, ext: str):
+@click.option('-f', '--files', is_flag=True, help='Search only in file names.')
+@click.option('-d', '--directories', is_flag=True, help='Search only in directory names.')
+@click.option('-c', '--content', is_flag=True, help='Search inside file contents.')
+@click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
+@click.option('--ext', multiple=True, type=click.STRING,
+    help='Filter results by file extension. Example: --ext py --ext js')
+def search(query: str, path: str, files: bool, directories: bool, content: bool, case_sensitive: bool, ext: tuple[str]):
     """Get query, search and display results"""
 
     if True not in (files, directories, content):
@@ -30,7 +31,7 @@ def search(query: str, path: str, files: bool, directories: bool, content: bool,
     else:
         filename_results = []
 
-    if directories and not ext.strip():
+    if directories and not ext:
         dir_results = search_in_names(path, query, case_sensitive, is_file=False)
         display_results(dir_results, 'Directories', 'directory')
     else:

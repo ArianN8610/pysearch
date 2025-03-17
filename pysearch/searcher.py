@@ -5,7 +5,8 @@ from pathlib import Path
 from .utils import highlight_matches
 
 
-def search_in_names(base_path: str, query: str, case_sensitive: bool, ext: str = '', is_file: bool = True) -> list[str]:
+def search_in_names(base_path: str, query: str, case_sensitive: bool, ext: tuple[str] = tuple(),
+                    is_file: bool = True) -> list[str]:
     """Search for file names"""
     base_path = Path(base_path)
     matches = []
@@ -13,14 +14,11 @@ def search_in_names(base_path: str, query: str, case_sensitive: bool, ext: str =
     if not case_sensitive:
         query = query.lower()
 
-    # Remove extra spaces and processing extensions
-    ext_list = [e.strip() for e in ext.split(',') if e.strip()]
-
     for p in base_path.rglob('*'):
         p_name = p.name.lower() if not case_sensitive else p.name
 
         if query in p_name and ((is_file and p.is_file()) or (not is_file and p.is_dir())):
-            if is_file and ext_list and p.suffix[1:] not in ext_list:
+            if is_file and ext and p.suffix[1:] not in ext:
                 continue  # Prevent unnecessary continuation in case of type mismatch
 
             p_name = p_name.replace(query, click.style(query, fg='green'))  # Specify the found part
@@ -29,7 +27,7 @@ def search_in_names(base_path: str, query: str, case_sensitive: bool, ext: str =
     return matches
 
 
-def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ext: str) -> list[str]:
+def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ext: tuple[str]) -> list[str]:
     """Search the contents of files"""
     base_path = Path(base_path)
     matches = []
@@ -37,10 +35,8 @@ def search_in_file_contents(base_path: str, query: str, case_sensitive: bool, ex
     if not case_sensitive:
         query = query.lower()
 
-    ext_list = [e.strip() for e in ext.split(',') if e.strip()]
-
     for file_path in base_path.rglob('*'):
-        if not file_path.is_file() or (ext_list and file_path.suffix[1:] not in ext_list):
+        if not file_path.is_file() or (ext and file_path.suffix[1:] not in ext):
             continue
 
         try:
