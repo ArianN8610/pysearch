@@ -2,14 +2,17 @@ import re
 import click
 
 
-def highlight_matches(line, query, case_sensitive, context=20):
+def highlight_matches(line: str, query: str, case_sensitive: bool, regex: bool = False,
+                      context: bool = 20) -> str | None:
     """Highlight matches and truncate long lines with proper handling"""
 
+    flags = 0 if case_sensitive else re.IGNORECASE
+
+    if not regex:
+        query = re.escape(query)  # If regex is disabled, use escape to search for regular text
+
     # Find all matches
-    if case_sensitive:
-        matches = list(re.finditer(re.escape(query), line))
-    else:
-        matches = list(re.finditer(re.escape(query), line, re.IGNORECASE))
+    matches = list(re.finditer(query, line, flags))
 
     if not matches:
         return None  # If there is no match, return None
@@ -31,12 +34,12 @@ def highlight_matches(line, query, case_sensitive, context=20):
     merged_snippets.append((current_start, current_end))  # Add the last section
 
     result = []
-    for i, (start, end) in enumerate(merged_snippets):
+    for start, end in merged_snippets:
         snippet = line[start:end]
-        snippet = snippet.replace(query, click.style(query, fg='green'))
+        snippet = re.sub(query, lambda m: click.style(m.group(), fg='green'), snippet, flags=flags)
         result.append(snippet)
 
-    final_output = ' ... '.join(result)  # # If there are multiple results, put `...` between them
+    final_output = ' ... '.join(result)  # If there are multiple results, put `...` between them
 
     # Add `...` at the beginning and end if needed
     if merged_snippets[0][0] > 0:

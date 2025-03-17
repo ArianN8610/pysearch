@@ -1,3 +1,4 @@
+import re
 import click
 
 from .utils import display_results
@@ -18,27 +19,37 @@ from .searcher import search_in_names, search_in_file_contents
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
 @click.option('--ext', multiple=True, type=click.STRING,
     help='Filter results by file extension. Example: --ext py --ext js')
-def search(query: str, path: str, files: bool, directories: bool, content: bool, case_sensitive: bool, ext: tuple[str]):
+@click.option('-r', '--regex', is_flag=True, help='Use a regular expression for searching.')
+def search(query: str, path: str, files: bool, directories: bool, content: bool, case_sensitive: bool, ext: tuple[str],
+           regex: bool):
     """Get query, search and display results"""
+
+    # Check regex value to avoid errors
+    if regex:
+        try:
+            re.compile(query)
+        except re.error:
+            click.echo(click.style('Invalid regex pattern: ', fg='red') + query)
+            return
 
     if True not in (files, directories, content):
         files = directories = content = True  # If no option is selected, search all
 
     # Search in file names and directory names and files content separately
     if files:
-        filename_results = search_in_names(path, query, case_sensitive, ext)
+        filename_results = search_in_names(path, query, case_sensitive, regex, ext)
         display_results(filename_results, 'Files', 'file')
     else:
         filename_results = []
 
     if directories and not ext:
-        dir_results = search_in_names(path, query, case_sensitive, is_file=False)
+        dir_results = search_in_names(path, query, case_sensitive, regex, is_file=False)
         display_results(dir_results, 'Directories', 'directory')
     else:
         dir_results = []
 
     if content:
-        content_results = search_in_file_contents(path, query, case_sensitive, ext)
+        content_results = search_in_file_contents(path, query, case_sensitive, ext, regex)
         display_results(content_results, 'Contents', 'content')
     else:
         content_results = []
