@@ -1,6 +1,7 @@
 import re
 import click
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from .utils import highlight_matches
 
@@ -20,8 +21,8 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
     flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
     # Convert include and exclude paths to `Path`
-    include_paths = [Path(p).resolve() for p in include]
-    exclude_paths = [Path(p).resolve() for p in exclude]
+    include_paths = {Path(p).resolve() for p in include}
+    exclude_paths = {Path(p).resolve() for p in exclude}
 
     for p in base_path.rglob('*'):
         p_resolved = p.resolve()  # Actual file or folder path
@@ -62,35 +63,42 @@ def search_in_file_contents(base_path, query, case_sensitive, ext, regex, includ
 
     flags = 0 if case_sensitive else re.IGNORECASE
 
-    include_paths = [Path(p).resolve() for p in include]
-    exclude_paths = [Path(p).resolve() for p in exclude]
+    include_paths = {Path(p).resolve() for p in include}
+    exclude_paths = {Path(p).resolve() for p in exclude}
 
-    for file_path in base_path.rglob('*'):
+    def process_file(file_path):
+        """Processes a single file and searches for the query inside its content."""
         p_resolved = file_path.resolve()
         p_size_mb = p_resolved.stat().st_size / 1_048_576
 
         if (
+                # Filter by include/exclude directories
                 (include and not any(p_resolved.is_relative_to(inc) for inc in include_paths))
                 or (exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths))
-                or (not file_path.is_file() or (ext and file_path.suffix[1:] not in ext))
+                # Filter by extension
+                or (ext and p_resolved.suffix[1:] not in ext)
+                # Filter by file size
                 or (max_size and p_size_mb > max_size)
                 or (min_size and p_size_mb < min_size)
         ):
-            continue
+            return
 
         try:
-            for num, line in enumerate(file_path.read_text(encoding='utf-8', errors='ignore').splitlines(), 1):
+            for num, line in enumerate(p_resolved.read_text(encoding='utf-8', errors='ignore').splitlines(), 1):
                 line = line.strip()
 
                 if re.search(query, line, flags):
                     highlighted_snippet, count_query = highlight_matches(line, query, case_sensitive, regex, whole_word)
-
                     matches.append(
                         click.style(file_path, fg='cyan')
                         + click.style(f' (Line {num}) (Repeated {count_query} time(s)): ', fg='magenta')
                         + highlighted_snippet
                     )
         except Exception:
-            continue  # Continue if there is an error (e.g. binary file)
+            return  # Ignore unreadable files
+
+    # Use multi-threading for faster processing
+    with ThreadPoolExecutor() as executor:
+        executor.map(process_file, (file for file in base_path.rglob('*') if file.is_file()))
 
     return matches
