@@ -15,7 +15,7 @@ from .searcher import search_in_names, search_in_file_contents
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Filter results by file extension. Example: --ext py --ext js')
-@click.option('--regex', is_flag=True, help='Use a regular expression for searching.')
+@click.option('--regex', is_flag=True, help='Use regular expression for searching.')
 @click.option('-i', '--include', type=click.Path(exists=True, file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files that contain search results.')
 @click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=True, dir_okay=True),
