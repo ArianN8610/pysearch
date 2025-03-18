@@ -7,7 +7,7 @@ from .utils import highlight_matches
 
 
 def search_in_names(base_path, query, case_sensitive, regex, include, exclude, whole_word, max_size, min_size,
-                    ext=tuple(), is_file=True):
+                    full_path, ext=tuple(), is_file=True):
     """Search for file and folder names"""
     base_path = Path(base_path)
     matches = []
@@ -44,13 +44,14 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
         if re.search(query, p.name, flags) and ((is_file and p.is_file()) or (not is_file and p.is_dir())):
             # Specify the found part
             highlighted_name = re.sub(query, lambda m: click.style(m.group(), fg='green'), p.name, flags=flags)
-            matches.append(f'{p.parent}\\{highlighted_name}')
+            p_parent = p_resolved.parent if full_path else p.parent  # Get full path if full_path is True
+            matches.append(f'{p_parent}\\{highlighted_name}')
 
     return matches
 
 
 def search_in_file_contents(base_path, query, case_sensitive, ext, regex, include, exclude, whole_word,
-                            max_size, min_size):
+                            max_size, min_size, full_path):
     """Search inside file contents"""
     base_path = Path(base_path)
     matches = []
@@ -89,6 +90,7 @@ def search_in_file_contents(base_path, query, case_sensitive, ext, regex, includ
 
                 if re.search(query, line, flags):
                     highlighted_snippet, count_query = highlight_matches(line, query, case_sensitive, regex, whole_word)
+                    file_path = p_resolved if full_path else file_path
                     matches.append(
                         click.style(file_path, fg='cyan')
                         + click.style(f' (Line {num}) (Repeated {count_query} time(s)): ', fg='magenta')
