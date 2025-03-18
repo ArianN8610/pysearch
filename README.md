@@ -1,4 +1,4 @@
-# Pysearch
+# Pseek
 
 ## Overview
 
@@ -17,14 +17,14 @@ A powerful command-line tool for searching files, directories, and content insid
 ### **1️⃣ Install via `pip` (Recommended)**
 
 ```sh
-pip install pysearch
+pip install pseek
 ```
 
 ### **2️⃣ Install from source**
 
 ```sh
 git clone https://github.com/ArianN8610/pysearch.git
-cd pysearch
+cd pseek
 pip install click==8.1.8
 ```
 
@@ -32,7 +32,7 @@ pip install click==8.1.8
 
 Run the command with a search query:
 ```sh
-pysearch <query> [options]
+pseek <query> [options]
 ```
 
 ## Examples
@@ -40,25 +40,25 @@ pysearch <query> [options]
 ### Search for a keyword in file & folder names
 
 ```sh
-pysearch "my_keyword" --path /path/to/search --file --directory
+pseek "my_keyword" --path /path/to/search --file --directory
 ```
 
 ### Search inside file contents
 
 ```sh
-pysearch "error" --path /var/logs --content
+pseek "error" --path /var/logs --content
 ```
 
 ### Search only in specific file types
 
 ```sh
-pysearch "TODO" --path ./projects --ext py --ext txt
+pseek "TODO" --path ./projects --ext py --ext txt
 ```
 
 ### Search by regex
 
 ```sh
-pysearch "error\d+" --regex
+pseek "error\d+" --regex
 ```
 
 ## Command Options
