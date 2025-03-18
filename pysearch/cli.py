@@ -7,63 +7,52 @@ from .searcher import search_in_names, search_in_file_contents
 
 @click.command()
 @click.argument('query')
-@click.option(
-    '-p', '--path',
-    type=click.Path(exists=True, file_okay=False, dir_okay=True),
-    default='.', show_default=True,
-    help='Base directory to search in.'
-)
+@click.option('-p', '--path', type=click.Path(exists=True, file_okay=False, dir_okay=True), default='.',
+              show_default=True, help='Base directory to search in.')
 @click.option('-f', '--file', is_flag=True, help='Search only in file names.')
 @click.option('-d', '--directory', is_flag=True, help='Search only in directory names.')
 @click.option('-c', '--content', is_flag=True, help='Search inside file contents.')
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
 @click.option('--ext', multiple=True, type=click.STRING,
-    help='Filter results by file extension. Example: --ext py --ext js')
+              help='Filter results by file extension. Example: --ext py --ext js')
 @click.option('--regex', is_flag=True, help='Use a regular expression for searching.')
-@click.option('-i', '--include', type=click.Path(exists=True, file_okay=False, dir_okay=True),
-              multiple=True, help='Folders that contain search results.')
-@click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=False, dir_okay=True),
-              multiple=True, help='Folders not included in search results.')
+@click.option('-i', '--include', type=click.Path(exists=True, file_okay=True, dir_okay=True),
+              multiple=True, help='Directories or files that contain search results.')
+@click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=True, dir_okay=True),
+              multiple=True, help='Directories or files not included in search results.')
 @click.option('--word', is_flag=True, help='Search for results that match the whole word.')
 def search(query: str, path: str, file: bool, directory: bool, content: bool, case_sensitive: bool, ext: tuple[str],
            regex: bool, include: tuple[str], exclude: tuple[str], word: bool):
-    """Get query, search and display results"""
+    """Search for files, directories, and content based on the query."""
 
-    # Check regex value to avoid errors
     if regex:
         try:
-            re.compile(query)
+            re.compile(query)  # Ensure valid regex
         except re.error:
             click.echo(click.style('Invalid regex pattern: ', fg='red') + query)
             return
 
-    if True not in (file, directory, content):
-        file = directory = content = True  # If no option is selected, search all
+    # Enable all search types if none are explicitly selected
+    if not any([file, directory, content]):
+        file = directory = content = True
 
-    # Search in file names and directory names and files content separately
+    results = []
+
     if file:
         filename_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, ext)
         display_results(filename_results, 'Files', 'file')
-    else:
-        filename_results = []
-
+        results.extend(filename_results)
     if directory and not ext:
         dir_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, is_file=False)
         display_results(dir_results, 'Directories', 'directory')
-    else:
-        dir_results = []
-
+        results.extend(dir_results)
     if content:
         content_results = search_in_file_contents(path, query, case_sensitive, ext, regex, include, exclude, word)
         display_results(content_results, 'Contents', 'content')
-    else:
-        content_results = []
+        results.extend(content_results)
 
-    # Display total of results
-    if results:=(filename_results + dir_results + content_results):
-        click.echo(click.style(f'\nTotal results: {len(results)}', fg='cyan'))
-    else:
-        click.echo(click.style('No results found', fg='red'))
+    message = f'\nTotal results: {len(results)}' if results else 'No results found'
+    click.echo(click.style(message, fg='red'))  # Display total of results
 
 
 if __name__ == "__main__":

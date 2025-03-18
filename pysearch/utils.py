@@ -2,8 +2,7 @@ import re
 import click
 
 
-def highlight_matches(line: str, query: str, case_sensitive: bool, regex: bool, whole_word: bool,
-                      context: bool = 20) -> str | None:
+def highlight_matches(line, query, case_sensitive, regex, whole_word, context=20):
     """Highlight matches and truncate long lines with proper handling"""
 
     flags = 0 if case_sensitive else re.IGNORECASE
@@ -47,10 +46,11 @@ def highlight_matches(line: str, query: str, case_sensitive: bool, regex: bool, 
     if merged_snippets[-1][1] < len(line):
         final_output += '...'
 
-    return final_output
+    return final_output, len(matches)  # Count the number of repetitions
 
 
-def display_results(results: list[str], title: str, result_name: str):
+def display_results(results, title, result_name):
+    """Display search results"""
     if results:
         click.echo(click.style(f'\n{title}:\n', fg='yellow'))
         for result in results:
