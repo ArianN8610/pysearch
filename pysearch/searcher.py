@@ -5,7 +5,8 @@ from pathlib import Path
 from .utils import highlight_matches
 
 
-def search_in_names(base_path, query, case_sensitive, regex, include, exclude, whole_word, ext=tuple(), is_file=True):
+def search_in_names(base_path, query, case_sensitive, regex, include, exclude, whole_word, max_size, min_size,
+                    ext=tuple(), is_file=True):
     """Search for file and folder names"""
     base_path = Path(base_path)
     matches = []
@@ -24,6 +25,7 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
 
     for p in base_path.rglob('*'):
         p_resolved = p.resolve()  # Actual file or folder path
+        p_size_mb = p_resolved.stat().st_size / 1_048_576  # Convert to MB
 
         if (
                 # If include is given, at least one of them must be present in the name
@@ -32,6 +34,9 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
                 or (exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths))
                 # Prevent unnecessary continuation in case of type mismatch
                 or (is_file and ext and p.suffix[1:] not in ext)
+                # Check file or directory size
+                or (max_size and p_size_mb > max_size)
+                or (min_size and p_size_mb < min_size)
         ):
             continue
 
@@ -43,7 +48,8 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
     return matches
 
 
-def search_in_file_contents(base_path, query, case_sensitive, ext, regex, include, exclude, whole_word):
+def search_in_file_contents(base_path, query, case_sensitive, ext, regex, include, exclude, whole_word,
+                            max_size, min_size):
     """Search inside file contents"""
     base_path = Path(base_path)
     matches = []
@@ -61,11 +67,14 @@ def search_in_file_contents(base_path, query, case_sensitive, ext, regex, includ
 
     for file_path in base_path.rglob('*'):
         p_resolved = file_path.resolve()
+        p_size_mb = p_resolved.stat().st_size / 1_048_576
 
         if (
                 (include and not any(p_resolved.is_relative_to(inc) for inc in include_paths))
                 or (exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths))
                 or (not file_path.is_file() or (ext and file_path.suffix[1:] not in ext))
+                or (max_size and p_size_mb > max_size)
+                or (min_size and p_size_mb < min_size)
         ):
             continue
 

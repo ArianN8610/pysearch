@@ -21,8 +21,10 @@ from .searcher import search_in_names, search_in_file_contents
 @click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files not included in search results.')
 @click.option('--word', is_flag=True, help='Search for results that match the whole word.')
-def search(query: str, path: str, file: bool, directory: bool, content: bool, case_sensitive: bool, ext: tuple[str],
-           regex: bool, include: tuple[str], exclude: tuple[str], word: bool):
+@click.option('--max-size', type=click.FLOAT, help='Maximum size directory or file can have (MB)')
+@click.option('--min-size', type=click.FLOAT, help='Minimum size directory or file can have (MB)')
+def search(query, path, file, directory, content, case_sensitive, ext, regex, include, exclude, word,
+           max_size, min_size):
     """Search for files, directories, and content based on the query."""
 
     if regex:
@@ -39,15 +41,18 @@ def search(query: str, path: str, file: bool, directory: bool, content: bool, ca
     results = []
 
     if file:
-        filename_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, ext)
+        filename_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, max_size,
+                                           min_size, ext)
         display_results(filename_results, 'Files', 'file')
         results.extend(filename_results)
     if directory and not ext:
-        dir_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, is_file=False)
+        dir_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, max_size, min_size,
+                                      is_file=False)
         display_results(dir_results, 'Directories', 'directory')
         results.extend(dir_results)
     if content:
-        content_results = search_in_file_contents(path, query, case_sensitive, ext, regex, include, exclude, word)
+        content_results = search_in_file_contents(path, query, case_sensitive, ext, regex, include, exclude, word,
+                                                  max_size, min_size)
         display_results(content_results, 'Contents', 'content')
         results.extend(content_results)
 
