@@ -3,7 +3,7 @@ import click
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-from .utils import highlight_matches
+from .utils import highlight_matches, safe_is_file
 
 
 def search_in_names(base_path, query, case_sensitive, regex, include, exclude, whole_word, max_size, min_size,
@@ -101,6 +101,6 @@ def search_in_file_contents(base_path, query, case_sensitive, ext, regex, includ
 
     # Use multi-threading for faster processing
     with ThreadPoolExecutor() as executor:
-        executor.map(process_file, (file for file in base_path.rglob('*') if file.is_file()))
+        executor.map(process_file, (file for file in base_path.rglob('*') if safe_is_file(file)))
 
     return matches

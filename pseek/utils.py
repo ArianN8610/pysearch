@@ -49,6 +49,14 @@ def highlight_matches(line, query, case_sensitive, regex, whole_word, context=20
     return final_output, len(matches)  # Count the number of repetitions
 
 
+def safe_is_file(file):
+    """Check if a file is accessible and return True/False."""
+    try:
+        return file.is_file()
+    except OSError:
+        return False  # Ignore files that cannot be accessed
+
+
 def display_results(results, title, result_name):
     """Display search results"""
     if results:
