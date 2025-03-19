@@ -26,7 +26,10 @@ def search_in_names(base_path, query, case_sensitive, regex, include, exclude, w
 
     for p in base_path.rglob('*'):
         p_resolved = p.resolve()  # Actual file or folder path
-        p_size_mb = p_resolved.stat().st_size / 1_048_576  # Convert to MB
+        try:
+            p_size_mb = p_resolved.stat().st_size / 1_048_576  # Convert to MB
+        except OSError:
+            continue  # if path cannot be accessible
 
         if (
                 # If include is given, at least one of them must be present in the name
