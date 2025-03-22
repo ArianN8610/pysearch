@@ -1,8 +1,5 @@
-import re
 import click
-
-from .utils import display_results
-from .searcher import search_in_names, search_in_file_contents
+from .searcher import Search
 
 
 @click.command()
@@ -28,36 +25,22 @@ def search(query, path, file, directory, content, case_sensitive, ext, regex, in
            max_size, min_size, full_path):
     """Search for files, directories, and content based on the query."""
 
-    if regex:
-        try:
-            re.compile(query)  # Ensure valid regex
-        except re.error:
-            click.echo(click.style('Invalid regex pattern: ', fg='red') + query)
-            return
-
     # Enable all search types if none are explicitly selected
     if not any([file, directory, content]):
         file = directory = content = True
 
-    results = []
+    count_results = 0
+    search_class = Search(path, query, case_sensitive, ext, regex, include, exclude, word, max_size, min_size,
+                          full_path)
 
     if file:
-        filename_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, max_size,
-                                           min_size, full_path, ext)
-        display_results(filename_results, 'Files', 'file')
-        results.extend(filename_results)
+        count_results += search_class.search('file').echo('Files', 'file')
     if directory and not ext:
-        dir_results = search_in_names(path, query, case_sensitive, regex, include, exclude, word, max_size, min_size,
-                                      full_path, is_file=False)
-        display_results(dir_results, 'Directories', 'directory')
-        results.extend(dir_results)
+        count_results += search_class.search('directory').echo('Directories', 'directory')
     if content:
-        content_results = search_in_file_contents(path, query, case_sensitive, ext, regex, include, exclude, word,
-                                                  max_size, min_size, full_path)
-        display_results(content_results, 'Contents', 'content')
-        results.extend(content_results)
+        count_results += search_class.search('content').echo('Contents', 'content')
 
-    message = f'\nTotal results: {len(results)}' if results else 'No results found'
+    message = f'\nTotal results: {count_results}' if count_results else 'No results found'
     click.echo(click.style(message, fg='red'))  # Display total of results
 
 
