@@ -4,14 +4,28 @@ import click
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
+# Extensions that are not suitable for content search
+EXCLUDED_EXTENSIONS = {
+    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'svg',
+    'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'wmv',
+    'mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'opus',
+    'exe', 'dll', 'bin', 'iso', 'img', 'dat', 'dmg', 'class', 'so', 'o', 'obj',
+    'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz',
+    'ttf', 'otf', 'woff', 'woff2', 'eot',
+    'db', 'sqlite', 'mdf', 'bak', 'log', 'jsonl', 'dat',
+    'apk', 'ipa', 'deb', 'rpm', 'pkg', 'appimage', 'jar', 'war',
+    'pyc', 'ps1', 'pem', 'pyd', 'whl'
+}
+
 
 class Search:
-    def __init__(self, base_path, query, case_sensitive, ext, regex, include, exclude, whole_word,
+    def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, whole_word,
                  max_size, min_size, full_path):
         self.base_path = base_path
         self.query = query
         self.case_sensitive = case_sensitive
         self.ext = ext
+        self.exclude_ext = exclude_ext
         self.regex = regex
         self.include = include
         self.exclude = exclude
@@ -36,10 +50,12 @@ class Search:
 
         if (
                 # Filter by include/exclude directories and files
-                (self.include and not any(p_resolved.is_relative_to(inc) for inc in include_paths))
-                or (self.exclude and any(p_resolved.is_relative_to(exc) for exc in exclude_paths))
+                (include_paths and not any(p_resolved.is_relative_to(inc) for inc in include_paths))
+                or (exclude_paths and any(p_resolved.is_relative_to(exc) for exc in exclude_paths))
                 # Filter by extension
                 or (self.ext and p_resolved.suffix[1:] not in self.ext)
+                or (self.exclude_ext and p_resolved.suffix[1:] in self.exclude_ext)
+                or (search_type == 'content' and p_resolved.suffix[1:] in EXCLUDED_EXTENSIONS)
                 # Filter by file size
                 or (self.max_size and p_size_mb > self.max_size)
                 or (self.min_size and p_size_mb < self.min_size)
@@ -116,7 +132,8 @@ class Search:
             with ThreadPoolExecutor() as executor:
                 executor.map(
                     process_file,
-                    (file for file in base_path.rglob('*') if not self.conditions(file, 'content'))
+                    (file for file in base_path.rglob('*')
+                     if not self.conditions(Path(file).resolve(), 'content'))
                 )
 
         self.result = matches

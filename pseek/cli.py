@@ -12,6 +12,8 @@ from .searcher import Search
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Filter results by file extension. Example: --ext py --ext js')
+@click.option('-E', '--exclude-ext', multiple=True, type=click.STRING,
+    help='Exclude files with these extensions. Example: --exclude-ext jpg --exclude-ext exe')
 @click.option('--regex', is_flag=True, help='Use regular expression for searching.')
 @click.option('-i', '--include', type=click.Path(exists=True, file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files that contain search results.')
@@ -21,7 +23,7 @@ from .searcher import Search
 @click.option('--max-size', type=click.FLOAT, help='Maximum size directory or file can have (MB)')
 @click.option('--min-size', type=click.FLOAT, help='Minimum size directory or file can have (MB)')
 @click.option('--full-path', is_flag=True, help='Display complete paths of files and directories.')
-def search(query, path, file, directory, content, case_sensitive, ext, regex, include, exclude, word,
+def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude, word,
            max_size, min_size, full_path):
     """Search for files, directories, and content based on the query."""
 
@@ -30,12 +32,12 @@ def search(query, path, file, directory, content, case_sensitive, ext, regex, in
         file = directory = content = True
 
     count_results = 0
-    search_class = Search(path, query, case_sensitive, ext, regex, include, exclude, word, max_size, min_size,
-                          full_path)
+    search_class = Search(path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, word, max_size,
+                          min_size, full_path)
 
     if file:
         count_results += search_class.search('file').echo('Files', 'file')
-    if directory and not ext:
+    if directory and not (ext or exclude_ext):
         count_results += search_class.search('directory').echo('Directories', 'directory')
     if content:
         count_results += search_class.search('content').echo('Contents', 'content')

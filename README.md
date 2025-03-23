@@ -69,7 +69,7 @@ pseek "error\d+" --regex
 | `--file`                   | Search only in file names                                    |
 | `--directory`              | Search only in directory names                               |
 | `--content`                | Search inside file contents                                  |
-| `--ext`                    | Filter by file extension (e.g., `.txt`, `.log`)              |
+| `--ext`, `--exclude-ext`   | Filter by file extension (e.g., `.txt`, `.log`)              |
 | `--case-sensitive`         | Make the search case-sensitive                               |
 | `--regex`                  | Use regular expression for searching                         |
 | `--include`, `--exclude`   | Limit search results to specific set of directories or files |
