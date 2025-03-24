@@ -69,7 +69,7 @@ class Search:
 
     def search(self, search_type: str):
         """Main search function. search_type can be 'file', 'directory' or 'content'"""
-        base_path = Path(self.base_path).resolve()
+        base_path = Path(self.base_path)
         query = self.query
 
         # Prepare query: escape if not regex
