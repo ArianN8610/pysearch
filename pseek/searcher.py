@@ -1,6 +1,7 @@
 import re
 import sys
 import click
+import mmap
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -22,21 +23,21 @@ class Search:
     def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, whole_word,
                  max_size, min_size, full_path):
         """Initialize search parameters"""
-        self.base_path = base_path
+        self.base_path = Path(base_path)
         self.query = query
         self.case_sensitive = case_sensitive
-        self.ext = ext
-        self.exclude_ext = exclude_ext
+        self.ext = set(ext)
+        self.exclude_ext = set(exclude_ext)
         self.regex = regex
-        self.include = include
-        self.exclude = exclude
+        self.include = {Path(p).resolve() for p in include}
+        self.exclude = {Path(p).resolve() for p in exclude}
         self.whole_word = whole_word
         self.max_size = max_size
         self.min_size = min_size
         self.full_path = full_path
         self.result = None
 
-    def conditions(self, p_resolved: Path, search_type: str) -> bool:
+    def should_skip(self, p_resolved: Path, search_type: str) -> bool:
         """
         Check whether the file/directory should be skipped based on various filters.
         Returns True if the path should be skipped.
@@ -47,15 +48,10 @@ class Search:
             # If path is inaccessible, skip it.
             return True
 
-        # Prepare include/exclude sets as resolved Paths
-        include_paths = {Path(p).resolve() for p in self.include}
-        exclude_paths = {Path(p).resolve() for p in self.exclude}
+        file_ext = p_resolved.suffix[1:].lower()
 
-        file_ext = p_resolved.suffix[1:]
-
-        # Conditions for skipping:
-        if (include_paths and not any(p_resolved.is_relative_to(inc) for inc in include_paths)) \
-                or (exclude_paths and any(p_resolved.is_relative_to(exc) for exc in exclude_paths)) \
+        if (self.include and not any(p_resolved.is_relative_to(inc) for inc in self.include)) \
+                or (self.exclude and any(p_resolved.is_relative_to(exc) for exc in self.exclude)) \
                 or (self.ext and file_ext not in self.ext) \
                 or (self.exclude_ext and file_ext in self.exclude_ext) \
                 or (search_type == 'content' and file_ext in EXCLUDED_EXTENSIONS) \
@@ -69,18 +65,11 @@ class Search:
 
     def search(self, search_type: str):
         """Main search function. search_type can be 'file', 'directory' or 'content'"""
-        base_path = Path(self.base_path)
         query = self.query
 
         # Prepare query: escape if not regex
         if not self.regex:
             query = re.escape(query)
-        else:
-            try:
-                re.compile(query)  # Validate regex pattern
-            except re.error:
-                click.echo(click.style('Invalid regex pattern: ', fg='red') + query)
-                sys.exit(1)
 
         # Apply whole-word matching only if not using regex (or if desired behavior is defined)
         if self.whole_word and not self.regex:
@@ -97,13 +86,13 @@ class Search:
 
         if search_type in ('file', 'directory'):
             matches = []
-            for p in base_path.rglob('*'):
+            for p in self.base_path.rglob('*'):
                 try:
                     p_resolved = p.resolve()
                 except Exception:
                     continue
                 # Skip if conditions fail or if name doesn't match the query
-                if self.conditions(p_resolved, search_type) or not pattern.search(p.name):
+                if self.should_skip(p_resolved, search_type) or not pattern.search(p.name):
                     continue
 
                 # Highlight matched query in the name
@@ -111,46 +100,68 @@ class Search:
                 # Choose parent path based on full_path flag
                 p_parent = p_resolved.parent if self.full_path else p.parent
                 matches.append(f'{p_parent}\\{highlighted_name}')
-        else:  # For content search
+        else:  # content search
             # Use dictionary: key: file path (colored), value: list of line matches
             matches = {}
+            # Compile binary version of the pattern
+            pattern_bytes = re.compile(pattern.pattern.encode('utf-8'))
 
             def process_file(file_path: Path):
                 """Process a single file for content search"""
                 try:
-                    p_resolved = file_path.resolve()
+                    # Avoid empty files for mmap
+                    if file_path.stat().st_size == 0:
+                        return
+
+                    # Open the file in binary read mode
+                    with open(file_path, 'rb') as f:
+                        # Memory-map the file for efficient access
+                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                            # Search for the pattern in the entire file as bytes
+                            if pattern_bytes.search(mm):
+                                lines = []
+                                mm.seek(0)  # Move the cursor to the beginning of the file
+
+                                # Iterate over each line in the file
+                                for num, line in enumerate(iter(mm.readline, b''), 1):
+                                    try:
+                                        # Decode the binary line as UTF-8 and strip whitespace
+                                        line_decoded = line.decode('utf-8').strip()
+                                    except UnicodeDecodeError:
+                                        # Skip lines that can't be decoded
+                                        continue
+
+                                    # If the pattern matches in the decoded line
+                                    if pattern_list := list(pattern.finditer(line_decoded)):
+                                        # Count how many times the pattern appears in the line
+                                        count = len(pattern_list)
+                                        # Highlight the matching parts in green
+                                        highlighted = pattern.sub(
+                                            lambda m: click.style(m.group(), fg='green'),
+                                            line_decoded
+                                        )
+                                        # Show a note if the pattern repeats 3 or more times
+                                        count_query = f' - Repeated {count} times' if count >= 3 else ''
+                                        # Format the output line with line number and highlighted matches
+                                        lines.append(
+                                            click.style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                                        )
+
+                                # If any matching lines were found
+                                if lines:
+                                    # Choose the file path format based on the full_path setting
+                                    file_label = str(file_path.resolve()) if self.full_path else str(file_path)
+                                    # Add the file and its matching lines to the results
+                                    matches[click.style(file_label, fg='cyan')] = lines
                 except Exception:
                     return
 
-                # Skip file if any filter condition is met
-                if self.conditions(p_resolved, 'content'):
-                    return
+            # Filter files before processing
+            files_to_process = {
+                p for p in self.base_path.rglob('*') if not self.should_skip(p, 'content')
+            }
 
-                line_matches = []
-                try:
-                    # Read file line by line
-                    with open(p_resolved, 'r', encoding='utf-8', errors='ignore') as f:
-                        for num, line in enumerate(f, 1):
-                            line = line.strip()
-                            if pattern.search(line):
-                                # Count occurrences of query in line
-                                count = len(list(pattern.finditer(line)))
-                                highlighted_line = pattern.sub(lambda m: click.style(m.group(), fg='green'), line)
-                                count_query = f'- Repeated {count} times' if count >= 3 else ''
-                                line_matches.append(
-                                    click.style(f'Line {num}{count_query}: ', fg='magenta') + highlighted_line
-                                )
-                except Exception:
-                    return  # Skip unreadable files
-
-                if line_matches:
-                    file_label = str(p_resolved) if self.full_path else str(file_path)
-                    # Use colored file path as key
-                    matches[click.style(file_label, fg='cyan')] = line_matches
-
-            # Create a list of files to process (filter out inaccessible ones early)
-            files_to_process = [file for file in base_path.rglob('*')]
-            with ThreadPoolExecutor() as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 executor.map(process_file, files_to_process)
 
         self.result = matches

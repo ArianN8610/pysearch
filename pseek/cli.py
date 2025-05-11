@@ -13,7 +13,7 @@ from .searcher import Search
 # Additional options
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
 @click.option('--regex', is_flag=True, help='Use regular expression for searching.')
-@click.option('--word', is_flag=True, help='Match whole words only.')
+@click.option('-w', '--word', is_flag=True, help='Match whole words only.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
