@@ -21,7 +21,7 @@ EXCLUDED_EXTENSIONS = {
 
 class Search:
     def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, whole_word,
-                 max_size, min_size, full_path):
+                 max_size, min_size, full_path, no_content):
         """Initialize search parameters"""
         self.base_path = Path(base_path)
         self.query = query
@@ -35,6 +35,7 @@ class Search:
         self.max_size = max_size
         self.min_size = min_size
         self.full_path = full_path
+        self.no_content = no_content
         self.result = None
 
     def should_skip(self, p_resolved: Path, search_type: str) -> bool:
@@ -102,7 +103,7 @@ class Search:
                 matches.append(f'{p_parent}\\{highlighted_name}')
         else:  # content search
             # Use dictionary: key: file path (colored), value: list of line matches
-            matches = {}
+            matches = {} if not self.no_content else set()
             # Compile binary version of the pattern
             pattern_bytes = re.compile(pattern.pattern.encode('utf-8'))
 
@@ -119,6 +120,14 @@ class Search:
                         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                             # Search for the pattern in the entire file as bytes
                             if pattern_bytes.search(mm):
+                                # Choose the file path format based on the full_path setting
+                                file_label = str(file_path.resolve()) if self.full_path else str(file_path)
+
+                                # Avoid searching through the entire file content if the fast-content flag is True
+                                if self.no_content:
+                                    matches.add(click.style(file_label, fg='cyan'))
+                                    return
+
                                 lines = []
                                 mm.seek(0)  # Move the cursor to the beginning of the file
 
@@ -149,8 +158,6 @@ class Search:
 
                                 # If any matching lines were found
                                 if lines:
-                                    # Choose the file path format based on the full_path setting
-                                    file_label = str(file_path.resolve()) if self.full_path else str(file_path)
                                     # Add the file and its matching lines to the results
                                     matches[click.style(file_label, fg='cyan')] = lines
                 except Exception:

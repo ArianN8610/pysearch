@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="pseek",
-    version="2.1.2",
+    version="2.1.3",
     author="Arian",
     author_email="ariannasiri86@gmail.com",
     description="Pseek is a Python library to search files, folders, and text",

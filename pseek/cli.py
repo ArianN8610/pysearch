@@ -29,8 +29,9 @@ from .searcher import Search
 @click.option('--min-size', type=click.FLOAT, help='Minimum file/directory size (in MB).')
 # Output option
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
+@click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex,
-           include, exclude, word, max_size, min_size, full_path):
+           include, exclude, word, max_size, min_size, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -49,7 +50,8 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         whole_word=word,
         max_size=max_size,
         min_size=min_size,
-        full_path=full_path
+        full_path=full_path,
+        no_content=no_content
     )
 
     total_results = 0

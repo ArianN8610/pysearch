@@ -76,3 +76,4 @@ pseek "error\d+" --regex
 | `--word`                   | Match the whole word only                                    |
 | `--max-size`, `--min-size` | Specify maximum and minimum sizes for files and directories  |
 | `--full-path`              | Display full path of files and directories                   |
+| `--no-content`             | Only display files path for content search                   |
