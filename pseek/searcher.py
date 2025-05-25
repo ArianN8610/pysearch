@@ -19,9 +19,18 @@ EXCLUDED_EXTENSIONS = {
 }
 
 
+def compile_regex(txt, flags=0):
+    if txt is not None:
+        try:
+            return re.compile(txt, flags)
+        except re.error as e:
+            click.echo(click.style(f"Regex compile error: {e}", fg='red'))
+            sys.exit(1)
+
+
 class Search:
-    def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, whole_word,
-                 max_size, min_size, full_path, no_content):
+    def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, re_include,
+                 re_exclude, whole_word, max_size, min_size, full_path, no_content):
         """Initialize search parameters"""
         self.base_path = Path(base_path)
         self.query = query
@@ -31,6 +40,8 @@ class Search:
         self.regex = regex
         self.include = {Path(p).resolve() for p in include}
         self.exclude = {Path(p).resolve() for p in exclude}
+        self.re_include = re_include
+        self.re_exclude = re_exclude
         self.whole_word = whole_word
         self.max_size = max_size
         self.min_size = min_size
@@ -62,6 +73,12 @@ class Search:
                 or (search_type == 'directory' and not p_resolved.is_dir()):
             return True
 
+        # Filter by regex include and exclude
+        if compiled_inc:=compile_regex(self.re_include):
+            return not compiled_inc.search(str(p_resolved))
+        if compiled_exc:=compile_regex(self.re_exclude):
+            return compiled_exc.search(str(p_resolved)) is not None
+
         return False
 
     def search(self, search_type: str):
@@ -77,13 +94,7 @@ class Search:
             query = rf'\b{query}\b'
 
         flags = 0 if self.case_sensitive else re.IGNORECASE  # Adjust case sensitivity
-
-        # Precompile the regex pattern for performance
-        try:
-            pattern = re.compile(query, flags)
-        except re.error as e:
-            click.echo(click.style(f"Regex compile error: {e}", fg='red'))
-            sys.exit(1)
+        pattern = compile_regex(query, flags)  # Precompile the regex pattern for performance
 
         if search_type in ('file', 'directory'):
             matches = []

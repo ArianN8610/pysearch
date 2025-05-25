@@ -24,14 +24,18 @@ from .searcher import Search
               multiple=True, help='Directories or files to include in search.')
 @click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to exclude from search.')
+@click.option('--re-include', type=click.STRING,
+              help='Directories or files to include in search with regex.')
+@click.option('--re-exclude', type=click.STRING,
+              help='Directories or files to exclude from search with regex.')
 # Size filters
 @click.option('--max-size', type=click.FLOAT, help='Maximum file/directory size (in MB).')
 @click.option('--min-size', type=click.FLOAT, help='Minimum file/directory size (in MB).')
 # Output option
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
-def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex,
-           include, exclude, word, max_size, min_size, full_path, no_content):
+def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
+           re_include, re_exclude, word, max_size, min_size, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -47,6 +51,8 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         regex=regex,
         include=include,
         exclude=exclude,
+        re_include=re_include,
+        re_exclude=re_exclude,
         whole_word=word,
         max_size=max_size,
         min_size=min_size,
