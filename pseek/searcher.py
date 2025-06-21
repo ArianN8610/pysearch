@@ -38,8 +38,8 @@ class Search:
         self.ext = set(ext)
         self.exclude_ext = set(exclude_ext)
         self.regex = regex
-        self.include = {Path(p).resolve() for p in include}
-        self.exclude = {Path(p).resolve() for p in exclude}
+        self.include = {Path(p) for p in include}
+        self.exclude = {Path(p) for p in exclude}
         self.re_include = re_include
         self.re_exclude = re_exclude
         self.whole_word = whole_word
