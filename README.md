@@ -24,8 +24,8 @@ pip install pseek
 
 ```sh
 git clone https://github.com/ArianN8610/pysearch.git
-cd pseek
-pip install click==8.1.8
+cd pysearch
+pip install click==8.1.8 lark==1.2.2
 ```
 
 ## Usage

@@ -170,7 +170,7 @@ class Search:
 
             # Filter files before processing
             files_to_process = {
-                p for p in self.base_path.rglob('*') if not self.should_skip(p, 'content')
+                p for p in self.base_path.rglob('*') if not self.should_skip(p.resolve(), 'content')
             }
 
             with ThreadPoolExecutor(max_workers=8) as executor:
