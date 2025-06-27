@@ -19,6 +19,6 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.6",
-    install_requires=["click==8.1.8"],
+    install_requires=["click==8.1.8", "lark==1.2.2"],
     entry_points={"console_scripts": ["pseek=pseek.cli:search"]}
 )

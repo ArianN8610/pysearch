@@ -63,18 +63,19 @@ pseek "error\d+" --regex
 
 ## Command Options
 
-| Option                         | Description                                                      |
-|--------------------------------|------------------------------------------------------------------|
-| `--path`                       | Base directory to search in (default: current directory `.`)     |
-| `--file`                       | Search only in file names                                        |
-| `--directory`                  | Search only in directory names                                   |
-| `--content`                    | Search inside file contents                                      |
-| `--ext`, `--exclude-ext`       | Filter by file extension (e.g., `.txt`, `.log`)                  |
-| `--case-sensitive`             | Make the search case-sensitive                                   |
-| `--regex`                      | Use regular expression for searching                             |
-| `--include`, `--exclude`       | Limit search results to specific set of directories or files     |
-| `--re-include`, `--re-exclude` | Limit search results to specific directories or files with regex |
-| `--word`                       | Match the whole word only                                        |
-| `--max-size`, `--min-size`     | Specify maximum and minimum sizes for files and directories      |
-| `--full-path`                  | Display full path of files and directories                       |
-| `--no-content`                 | Only display files path for content search                       |
+| Option                         | Description                                                                                                                             |
+|--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| `--path`                       | Base directory to search in (default: current directory `.`)                                                                            |
+| `--file`                       | Search only in file names                                                                                                               |
+| `--directory`                  | Search only in directory names                                                                                                          |
+| `--content`                    | Search inside file contents                                                                                                             |
+| `--ext`, `--exclude-ext`       | Filter by file extension (e.g., `.txt`, `.log`)                                                                                         |
+| `--case-sensitive`             | Make the search case-sensitive                                                                                                          |
+| `--regex`                      | Use regular expressions to search (except when --expr is enabled, in which case you can make it regex by putting r before term: r"foo") |
+| `--include`, `--exclude`       | Limit search results to specific set of directories or files                                                                            |
+| `--re-include`, `--re-exclude` | Limit search results to specific directories or files with regex                                                                        |
+| `--word`                       | Match the whole word only                                                                                                               |
+| `--expr`                       | Enable to write conditions in the query. Example: r"foo.*bar" and ("bar" or "baz") and not "qux"                                        |
+| `--max-size`, `--min-size`     | Specify maximum and minimum sizes for files and directories                                                                             |
+| `--full-path`                  | Display full path of files and directories                                                                                              |
+| `--no-content`                 | Only display files path for content search                                                                                              |

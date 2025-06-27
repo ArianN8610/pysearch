@@ -1,8 +1,8 @@
-import re
-import sys
-import click
 import mmap
+import click
 from pathlib import Path
+from .utils import compile_regex
+from .parser import parse_query_expression, TermNode, highlight_text_safe
 from concurrent.futures import ThreadPoolExecutor
 
 # Extensions that are not suitable for content search (binary, media, etc.)
@@ -19,18 +19,9 @@ EXCLUDED_EXTENSIONS = {
 }
 
 
-def compile_regex(txt, flags=0):
-    if txt is not None:
-        try:
-            return re.compile(txt, flags)
-        except re.error as e:
-            click.echo(click.style(f"Regex compile error: {e}", fg='red'))
-            sys.exit(1)
-
-
 class Search:
     def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, re_include,
-                 re_exclude, whole_word, max_size, min_size, full_path, no_content):
+                 re_exclude, whole_word, expr, max_size, min_size, full_path, no_content):
         """Initialize search parameters"""
         self.base_path = Path(base_path)
         self.query = query
@@ -38,11 +29,12 @@ class Search:
         self.ext = set(ext)
         self.exclude_ext = set(exclude_ext)
         self.regex = regex
-        self.include = {Path(p) for p in include}
-        self.exclude = {Path(p) for p in exclude}
+        self.include = {Path(p).resolve() for p in include}
+        self.exclude = {Path(p).resolve() for p in exclude}
         self.re_include = re_include
         self.re_exclude = re_exclude
         self.whole_word = whole_word
+        self.expr = expr
         self.max_size = max_size
         self.min_size = min_size
         self.full_path = full_path
@@ -83,18 +75,7 @@ class Search:
 
     def search(self, search_type: str):
         """Main search function. search_type can be 'file', 'directory' or 'content'"""
-        query = self.query
-
-        # Prepare query: escape if not regex
-        if not self.regex:
-            query = re.escape(query)
-
-        # Apply whole-word matching only if not using regex (or if desired behavior is defined)
-        if self.whole_word and not self.regex:
-            query = rf'\b{query}\b'
-
-        flags = 0 if self.case_sensitive else re.IGNORECASE  # Adjust case sensitivity
-        pattern = compile_regex(query, flags)  # Precompile the regex pattern for performance
+        pattern = parse_query_expression(self.query, self.expr, self.regex, self.whole_word, self.case_sensitive)
 
         if search_type in ('file', 'directory'):
             matches = []
@@ -104,19 +85,25 @@ class Search:
                 except Exception:
                     continue
                 # Skip if conditions fail or if name doesn't match the query
-                if self.should_skip(p_resolved, search_type) or not pattern.search(p.name):
+                if self.should_skip(p_resolved, search_type) or not pattern.evaluate(p.name):
                     continue
 
                 # Highlight matched query in the name
-                highlighted_name = pattern.sub(lambda m: click.style(m.group(), fg='green'), p.name)
+                highlighted_name = highlight_text_safe(pattern, p.name)
                 # Choose parent path based on full_path flag
                 p_parent = p_resolved.parent if self.full_path else p.parent
                 matches.append(f'{p_parent}\\{highlighted_name}')
         else:  # content search
             # Use dictionary: key: file path (colored), value: list of line matches
             matches = {} if not self.no_content else set()
-            # Compile binary version of the pattern
-            pattern_bytes = re.compile(pattern.pattern.encode('utf-8'))
+
+            # If expression is simple and is a single TermNode, we can use binary pattern
+            binary_pattern = None
+            if isinstance(pattern, TermNode):
+                try:
+                    binary_pattern = pattern.get_binary_pattern()
+                except Exception:
+                    binary_pattern = None
 
             def process_file(file_path: Path):
                 """Process a single file for content search"""
@@ -129,48 +116,55 @@ class Search:
                     with open(file_path, 'rb') as f:
                         # Memory-map the file for efficient access
                         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                            # Search for the pattern in the entire file as bytes
-                            if pattern_bytes.search(mm):
-                                # Choose the file path format based on the full_path setting
-                                file_label = str(file_path.resolve()) if self.full_path else str(file_path)
-
-                                # Avoid searching through the entire file content if the fast-content flag is True
-                                if self.no_content:
-                                    matches.add(click.style(file_label, fg='cyan'))
+                            if binary_pattern is not None:
+                                if not binary_pattern.search(mm):
+                                    return
+                            else:
+                                # fallback: decode whole file for complex expressions
+                                try:
+                                    content = mm.read().decode('utf-8')
+                                except UnicodeDecodeError:
                                     return
 
-                                lines = []
-                                mm.seek(0)  # Move the cursor to the beginning of the file
+                                if not pattern.evaluate(content):
+                                    return
 
-                                # Iterate over each line in the file
-                                for num, line in enumerate(iter(mm.readline, b''), 1):
-                                    try:
-                                        # Decode the binary line as UTF-8 and strip whitespace
-                                        line_decoded = line.decode('utf-8').strip()
-                                    except UnicodeDecodeError:
-                                        # Skip lines that can't be decoded
-                                        continue
+                            # Choose the file path format based on the full_path setting
+                            file_label = str(file_path.resolve()) if self.full_path else str(file_path)
 
-                                    # If the pattern matches in the decoded line
-                                    if pattern_list := list(pattern.finditer(line_decoded)):
-                                        # Count how many times the pattern appears in the line
-                                        count = len(pattern_list)
-                                        # Highlight the matching parts in green
-                                        highlighted = pattern.sub(
-                                            lambda m: click.style(m.group(), fg='green'),
-                                            line_decoded
-                                        )
-                                        # Show a note if the pattern repeats 3 or more times
-                                        count_query = f' - Repeated {count} times' if count >= 3 else ''
-                                        # Format the output line with line number and highlighted matches
-                                        lines.append(
-                                            click.style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
-                                        )
+                            # Avoid searching through the entire file content if the fast-content flag is True
+                            if self.no_content:
+                                matches.add(click.style(file_label, fg='cyan'))
+                                return
 
-                                # If any matching lines were found
-                                if lines:
-                                    # Add the file and its matching lines to the results
-                                    matches[click.style(file_label, fg='cyan')] = lines
+                            lines = []
+                            mm.seek(0)  # Move the cursor to the beginning of the file
+
+                            # Iterate over each line in the file
+                            for num, line in enumerate(iter(mm.readline, b''), 1):
+                                try:
+                                    # Decode the binary line as UTF-8 and strip whitespace
+                                    line_decoded = line.decode('utf-8').strip()
+                                except UnicodeDecodeError:
+                                    # Skip lines that can't be decoded
+                                    continue
+
+                                # If the pattern matches in the decoded line
+                                if pattern.evaluate(line_decoded):
+                                    count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
+                                    # Highlight the matching parts in green
+                                    highlighted = highlight_text_safe(pattern, line_decoded)
+                                    # Show a note if the pattern repeats 3 or more times
+                                    count_query = f' - Repeated {count} times' if count >= 3 else ''
+                                    # Format the output line with line number and highlighted matches
+                                    lines.append(
+                                        click.style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                                    )
+
+                            # If any matching lines were found
+                            if lines:
+                                # Add the file and its matching lines to the results
+                                matches[click.style(file_label, fg='cyan')] = lines
                 except Exception:
                     return
 

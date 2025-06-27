@@ -12,8 +12,13 @@ from .searcher import Search
 @click.option('-c', '--content', is_flag=True, help='Search inside file contents.')
 # Additional options
 @click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
-@click.option('--regex', is_flag=True, help='Use regular expression for searching.')
+@click.option('-r', '--regex', is_flag=True,
+              help='Use regular expressions to search '
+                   '(except when --expr is enabled, '
+                   'in which case you can make it regex by putting r before term -> r"foo")')
 @click.option('-w', '--word', is_flag=True, help='Match whole words only.')
+@click.option('--expr', is_flag=True,
+              help='Enable to write conditions in the query. Example: r"foo.*bar" and ("bar" or "baz") and not "qux"')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -35,7 +40,7 @@ from .searcher import Search
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
-           re_include, re_exclude, word, max_size, min_size, full_path, no_content):
+           re_include, re_exclude, word, expr, max_size, min_size, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -54,6 +59,7 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         re_include=re_include,
         re_exclude=re_exclude,
         whole_word=word,
+        expr=expr,
         max_size=max_size,
         min_size=min_size,
         full_path=full_path,
