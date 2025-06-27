@@ -85,11 +85,11 @@ query_grammar = r"""
 ?not_expr: "not" not_expr           -> not_expr
          | term
 
-?term: REGEX_STRING                 -> regex_string
-     | ESCAPED_STRING               -> string
+?term: PREFIXED_STRING          -> prefixed_string
+     | ESCAPED_STRING           -> string
      | "(" expr ")"
 
-REGEX_STRING: "r" ESCAPED_STRING
+PREFIXED_STRING: /(r|c|w|rc|cr|cw|wc)"([^"\\]|\\.)*"/
 
 %import common.ESCAPED_STRING
 %import common.WS
@@ -99,10 +99,8 @@ REGEX_STRING: "r" ESCAPED_STRING
 
 class TreeToExpr(Transformer):
     """Transform parsed tree into expression tree (ExprNode subclasses)"""
-    def __init__(self, whole_word, case_sensitive):
+    def __init__(self):
         super().__init__()
-        self.whole_word = whole_word
-        self.case_sensitive = case_sensitive
 
     def string(self, s):
         """ Match normal quoted string: "foo" """
@@ -110,18 +108,20 @@ class TreeToExpr(Transformer):
         return TermNode(
             term,
             False,
-            self.whole_word,
-            self.case_sensitive
+            False,
+            False
         )
 
-    def regex_string(self, s):
-        """ Match regex pattern like r"foo.*bar" """
-        term = s[0][2:-1]  # remove r and quotes
+    def prefixed_string(self, s):
+        text = str(s[0])  # e.g., 'rc"pattern"'
+        prefix = text.split('"', 1)[0].lower()
+        content = text.split('"', 1)[1][:-1]
+
         return TermNode(
-            term,
-            True,
-            False,  # whole_word doesn't make sense for regex
-            self.case_sensitive
+            content,
+            regex='r' in prefix,
+            whole_word='w' in prefix,
+            case_sensitive='c' in prefix,
         )
 
     def and_expr(self, args):
@@ -147,10 +147,7 @@ def parse_query_expression(query: str, expr, regex, whole_word, case_sensitive) 
     parser = Lark(query_grammar, parser="lalr")
     try:
         tree = parser.parse(query)
-        return TreeToExpr(
-            whole_word,
-            case_sensitive
-        ).transform(tree)
+        return TreeToExpr().transform(tree)
     except Exception as e:
         click.echo(click.style("Query parser error:\n\n", fg='red') + str(e))
         sys.exit(1)

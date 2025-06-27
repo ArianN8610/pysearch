@@ -11,14 +11,23 @@ from .searcher import Search
 @click.option('-d', '--directory', is_flag=True, help='Search only in directory names.')
 @click.option('-c', '--content', is_flag=True, help='Search inside file contents.')
 # Additional options
-@click.option('-C', '--case-sensitive', is_flag=True, help='Make the search case-sensitive.')
+@click.option('-C', '--case-sensitive', is_flag=True,
+              help='Make the search case-sensitive '
+                   '(except when --expr is enabled, '
+                   'in which case you can make it case sensitive by putting c before term: c"foo")')
 @click.option('-r', '--regex', is_flag=True,
               help='Use regular expressions to search '
                    '(except when --expr is enabled, '
-                   'in which case you can make it regex by putting r before term -> r"foo")')
-@click.option('-w', '--word', is_flag=True, help='Match whole words only.')
+                   'in which case you can make it regex by putting r before term: r"foo")')
+@click.option('-w', '--word', is_flag=True,
+              help='Match whole words only '
+                   '(except when --expr is enabled, '
+                   'in which case you can make it match whole word by putting w before term: w"foo")')
 @click.option('--expr', is_flag=True,
-              help='Enable to write conditions in the query. Example: r"foo.*bar" and ("bar" or "baz") and not "qux"')
+              help='Enable to write conditions in the query. Example: r"foo.*bar" and ("bar" or "baz") and not "qux" '
+                   '(To use regex, word, and case-sensitive features, '
+                   'you can use the prefixes r, w, and c before terms. Allowed modes: r, w, c, wc, cw, rc, cr. '
+                   'Examples: r"foo.*bar", wc"Foo", cr".*Foo", ...)')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
