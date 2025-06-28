@@ -1,5 +1,26 @@
 import click
 from .searcher import Search
+from multiprocessing import Process
+
+
+def run_search_process(file, directory, content, ext, exclude_ext, search_instance):
+    """Performs the basic search operation"""
+    total_results = 0
+
+    # Search for files if requested.
+    if file:
+        total_results += search_instance.search('file').echo('Files', 'file')
+    # Search for directories if requested and extension filters are not active.
+    if directory and not (ext or exclude_ext):
+        total_results += search_instance.search('directory').echo('Directories', 'directory')
+    # Search for content inside files if requested.
+    if content:
+        total_results += search_instance.search('content').echo('Contents', 'content')
+
+    # Display final summary message.
+    message = f'\nTotal results: {total_results}' if total_results else 'No results found'
+    click.echo(click.style(message, fg='red'))
+
 
 
 @click.command()
@@ -28,6 +49,8 @@ from .searcher import Search
                    '(To use regex, word, and case-sensitive features, '
                    'you can use the prefixes r, w, and c before terms. Allowed modes: r, w, c, wc, cw, rc, cr. '
                    'Examples: r"foo.*bar", wc"Foo", cr".*Foo", ...)')
+@click.option('--timeout', type=click.INT,
+              help='To stop the search after a specified period of time (Seconds)')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -49,7 +72,7 @@ from .searcher import Search
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
-           re_include, re_exclude, word, expr, max_size, min_size, full_path, no_content):
+           re_include, re_exclude, word, expr, timeout, max_size, min_size, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -75,21 +98,21 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         no_content=no_content
     )
 
-    total_results = 0
+    # Stop search if it exceeds timeout with multiprocessing
+    if timeout:
+        p = Process(
+            target=run_search_process,
+            args=(file, directory, content, ext, exclude_ext, search_instance)
+        )
+        p.start()
+        p.join(timeout)
 
-    # Search for files if requested.
-    if file:
-        total_results += search_instance.search('file').echo('Files', 'file')
-    # Search for directories if requested and extension filters are not active.
-    if directory and not (ext or exclude_ext):
-        total_results += search_instance.search('directory').echo('Directories', 'directory')
-    # Search for content inside files if requested.
-    if content:
-        total_results += search_instance.search('content').echo('Contents', 'content')
-
-    # Display final summary message.
-    message = f'\nTotal results: {total_results}' if total_results else 'No results found'
-    click.echo(click.style(message, fg='red'))
+        if p.is_alive():
+            p.terminate()
+            p.join()
+            click.echo(click.style(f"\nTimeout! Search exceeded {timeout} seconds and was stopped.", fg="red"))
+    else:
+        run_search_process(file, directory, content, ext, exclude_ext, search_instance)
 
 
 if __name__ == "__main__":
