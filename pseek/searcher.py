@@ -126,7 +126,7 @@ class Search:
                                 except UnicodeDecodeError:
                                     return
 
-                                if not pattern.evaluate(content):
+                                if not pattern.evaluate(content) and not self.expr:
                                     return
 
                             # Choose the file path format based on the full_path setting
