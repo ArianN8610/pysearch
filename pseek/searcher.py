@@ -133,7 +133,7 @@ class Search:
                             file_label = str(file_path.resolve()) if self.full_path else str(file_path)
 
                             # Avoid searching through the entire file content if the fast-content flag is True
-                            if self.no_content:
+                            if self.no_content and not self.expr:
                                 matches.add(click.style(file_label, fg='cyan'))
                                 return
 
@@ -151,6 +151,9 @@ class Search:
 
                                 # If the pattern matches in the decoded line
                                 if pattern.evaluate(line_decoded):
+                                    if self.no_content and self.expr:
+                                        matches.add(click.style(file_label, fg='cyan'))
+                                        return
                                     count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
                                     # Highlight the matching parts in green
                                     highlighted = highlight_text_safe(pattern, line_decoded)
