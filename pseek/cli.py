@@ -68,11 +68,25 @@ def run_search_process(file, directory, content, ext, exclude_ext, search_instan
 # Size filters
 @click.option('--max-size', type=click.FLOAT, help='Maximum file/directory size (in MB).')
 @click.option('--min-size', type=click.FLOAT, help='Minimum file/directory size (in MB).')
+# Archive options
+@click.option('--archive', is_flag=True,
+              help='Enable search within archive files (e.g. zip, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
+@click.option('--arc-ext', multiple=True, type=click.STRING,
+              help='Include files with these extensions inside archive files. Example: --arc-ext py --arc-ext js')
+@click.option('--arc-ee', multiple=True, type=click.STRING,
+              help='Exclude files with these extensions inside archive files. Example: --arc-ee jpg --arc-ee exe')
+@click.option('--arc-inc', type=click.Path(file_okay=True, dir_okay=True),
+              multiple=True, help='Directories or files to include in search for inside archive files.')
+@click.option('--arc-exc', type=click.Path(file_okay=True, dir_okay=True),
+              multiple=True, help='Directories or files to exclude from search for inside archive files.')
+@click.option('--arc-max', type=click.FLOAT, help='Maximum size of files in the archive (in MB).')
+@click.option('--arc-min', type=click.FLOAT, help='Minimum size of files in the archive (in MB).')
 # Output option
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
-           re_include, re_exclude, word, expr, timeout, max_size, min_size, full_path, no_content):
+           re_include, re_exclude, word, expr, timeout, max_size, min_size, archive, arc_ext, arc_ee, arc_inc,
+           arc_exc, arc_max, arc_min, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -94,6 +108,13 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         expr=expr,
         max_size=max_size,
         min_size=min_size,
+        archive=archive,
+        arc_ext=arc_ext,
+        arc_ee=arc_ee,
+        arc_inc=arc_inc,
+        arc_exc=arc_exc,
+        arc_max=arc_max,
+        arc_min=arc_min,
         full_path=full_path,
         no_content=no_content
     )
