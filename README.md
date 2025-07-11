@@ -10,17 +10,19 @@ A powerful command-line tool for searching files, directories, and content insid
 * **Search inside file contents**
 * **Highlight matches** in terminal output
 * **Optimized for speed** with ThreadPoolExecutor
+* Support **logical expression** for search queries
+* Search inside **archive files** (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`)
 * **Cross-platform** (Linux, macOS, Windows)
 
 ## Installation
 
-### **1️⃣ Install via `pip` (Recommended)**
+### **`1` Install via `pip` (Recommended)**
 
 ```sh
 pip install pseek
 ```
 
-### **2️⃣ Install from source**
+### **`2` Install from source**
 
 ```sh
 git clone https://github.com/ArianN8610/pysearch.git
@@ -78,9 +80,15 @@ pseek "error\d+" --regex
 | `--expr`                       | Enable to write conditions in the query. Example: `r"foo.*bar" and ("bar" or "baz") and not "qux"` (To use regex, word, and case-sensitive features, you can use the prefixes `r`, `w`, and `c` before terms. Allowed modes: `r`, `w`, `c`, `wc`, `cw`, `rc`, `cr`. Examples: `r"foo.*bar"`, `wc"Foo"`, `cr".*Foo"`, ...) |
 | `--timeout`                    | To stop the search after a specified period of time (Seconds)                                                                                                                                                                                                                                                             |
 | `--max-size`, `--min-size`     | Specify maximum and minimum sizes for files and directories                                                                                                                                                                                                                                                               |
-| `--archive`                    | Enable search within archive files (e.g. `zip`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`)                                                                                                                                                                                                            |
+| `--archive`                    | Enable search within archive files (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`)                                                                                                                                                                                                     |
 | `--arc-ext`, `--arc-ee`        | Filter by file extension inside archive files                                                                                                                                                                                                                                                                             |
 | `--arc-inc`, `--arc-exc`       | Limit search results to specific set of directories or files inside archive files                                                                                                                                                                                                                                         |
 | `--arc-max`, `--arc-min`       | Specify maximum and minimum sizes for files inside archive files (It doesn't work for directories because their size is zero in archive files)                                                                                                                                                                            |
+| `--rarfb`                      | Path to RAR backend tool (e.g. UnRAR.exe, ...)                                                                                                                                                                                                                                                                            |
 | `--full-path`                  | Display full path of files and directories                                                                                                                                                                                                                                                                                |
 | `--no-content`                 | Only display files path for content search                                                                                                                                                                                                                                                                                |
+
+## Requirements
+
+* Python 3.6 or higher
+* `unrar`, `bsdtar`, `unar` or `7zip` for the rarfile library to support searching inside `.rar` files (optional)

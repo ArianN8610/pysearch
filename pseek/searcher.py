@@ -1,7 +1,7 @@
 import mmap
 import click
 from pathlib import Path
-from .utils import compile_regex, get_archive_path_size
+from .utils import compile_regex, get_archive_path_size, try_decode
 from .parser import parse_query_expression, TermNode, highlight_text_safe
 from concurrent.futures import ThreadPoolExecutor
 import zipfile
@@ -10,9 +10,10 @@ import tarfile
 import gzip
 import bz2
 import lzma
+import rarfile
 
 # Archive extensions that are allowed
-ARCHIVE_EXTS = ('zip', '7z', 'tar', 'gz', 'bz2', 'xz', 'tar.gz', 'tar.bz2', 'tar.xz')
+ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tar.gz', 'tar.bz2', 'tar.xz')
 
 # Extensions that are not suitable for content search (binary, media, etc.)
 EXCLUDED_EXTENSIONS = (
@@ -20,7 +21,7 @@ EXCLUDED_EXTENSIONS = (
     'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'wmv',
     'mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'opus',
     'exe', 'dll', 'bin', 'iso', 'img', 'dat', 'dmg', 'class', 'so', 'o', 'obj',
-    'rar', 'ttf', 'otf', 'woff', 'woff2', 'eot',
+    'ttf', 'otf', 'woff', 'woff2', 'eot',
     'db', 'sqlite', 'mdf', 'bak', 'log', 'jsonl', 'dat',
     'apk', 'ipa', 'deb', 'rpm', 'pkg', 'appimage', 'jar', 'war',
     'pyc', 'ps1', 'pem', 'pyd', 'whl'
@@ -36,7 +37,7 @@ class Search:
         self.query = query
         self.case_sensitive = case_sensitive
         self.ext = set(ext)
-        self.exclude_ext = set(exclude_ext)
+        self.exclude_ext = set(exclude_ext) | {''} if exclude_ext else set() # To exclude directories from search result
         self.regex = regex
         self.include = {Path(p).resolve() for p in include}
         self.exclude = {Path(p).resolve() for p in exclude}
@@ -48,7 +49,7 @@ class Search:
         self.min_size = min_size
         self.archive = archive
         self.arc_ext = set(arc_ext)
-        self.arc_ee = set(arc_ee)
+        self.arc_ee = set(arc_ee) | {''} if arc_ee else set()
         self.arc_inc = {Path(p) for p in arc_inc}
         self.arc_exc = {Path(p) for p in arc_exc}
         self.arc_max = arc_max
@@ -71,7 +72,7 @@ class Search:
         file_ext = ''.join(p_resolved.suffixes)[1:].lower()
 
         # Ignore some filters for archive files when archive is enabled
-        if (not self.archive or not file_ext in ('zip', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz')) and \
+        if (not self.archive or not file_ext in ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz')) and \
                 ((search_type in ('file', 'content') and not p_resolved.is_file())
                  or (search_type == 'directory' and not p_resolved.is_dir())):
             return True
@@ -129,15 +130,37 @@ class Search:
                 with zipfile.ZipFile(file_path) as zf:
                     for info in zf.infolist():
                         name = Path(info.filename)
-                        if not self.archive_should_skip(name, search_type, not info.is_dir(),
-                                                        info.is_dir(), get_archive_path_size(info, 'zip')):
+                        if not self.archive_should_skip(
+                                name,
+                                search_type,
+                                not info.is_dir(),
+                                info.is_dir(),
+                                get_archive_path_size(info, 'zip')
+                        ):
+                            yield name
+            elif file_ext == 'rar':
+                with rarfile.RarFile(file_path) as rf:
+                    for info in rf.infolist():
+                        name = Path(info.filename)
+                        if not self.archive_should_skip(
+                                name,
+                                search_type,
+                                not info.is_dir(),
+                                info.is_dir(),
+                                get_archive_path_size(info, 'rar')
+                        ):
                             yield name
             elif file_ext == '7z':
                 with py7zr.SevenZipFile(file_path, mode='r') as z:
                     for info in z.list():
                         name = Path(info.filename)
-                        if not self.archive_should_skip(name, search_type, not info.is_directory,
-                                                    info.is_directory, get_archive_path_size(info, '7z')):
+                        if not self.archive_should_skip(
+                                name,
+                                search_type,
+                                not info.is_directory,
+                                info.is_directory,
+                                get_archive_path_size(info, '7z')
+                        ):
                             yield name
             elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
                 # Specify the mode based on the file ext to open it
@@ -152,8 +175,13 @@ class Search:
                 with tarfile.open(file_path, mode) as tf:
                     for member in tf.getmembers():
                         name = Path(member.name)
-                        if not self.archive_should_skip(name, search_type, member.isfile(), member.isdir(),
-                                                        get_archive_path_size(member, file_ext)):
+                        if not self.archive_should_skip(
+                                name,
+                                search_type,
+                                member.isfile(),
+                                member.isdir(),
+                                get_archive_path_size(member, file_ext)
+                        ):
                             yield name
         except Exception:
             return  # silently skip invalid archives
@@ -161,27 +189,44 @@ class Search:
     def extract_text_from_archive(self, file_path: Path):
         """
         Generator yielding (filename, content_text) from archive files.
-        Supports zip, tar, gz, bz2, xz, 7z.
+        Supports zip, rar, tar, gz, bz2, xz, 7z.
         """
 
         file_ext = ''.join(file_path.suffixes)[1:].lower()
-
-        def try_decode(d):
-            try:
-                return d.decode('utf-8')
-            except UnicodeDecodeError:
-                return None
 
         try:
             if file_ext == 'zip':
                 with zipfile.ZipFile(file_path) as zf:
                     for info in zf.infolist():
                         file_name = Path(info.filename)
-                        if self.archive_should_skip(file_name, 'content', not info.is_dir(),
-                                                    info.is_dir(), get_archive_path_size(info, 'zip')):
+                        if self.archive_should_skip(
+                                file_name,
+                                'content',
+                                not info.is_dir(),
+                                info.is_dir(),
+                                get_archive_path_size(info, 'zip')
+                        ):
                             continue
 
                         with zf.open(info) as f:
+                            data = f.read()
+                            text = try_decode(data)
+                            if text is not None:
+                                yield info.filename, text
+            elif file_ext == 'rar':
+                with rarfile.RarFile(file_path) as rf:
+                    for info in rf.infolist():
+                        file_name = Path(info.filename)
+                        if self.archive_should_skip(
+                                file_name,
+                                'content',
+                                not info.is_dir(),
+                                info.is_dir(),
+                                get_archive_path_size(info, 'rar')
+                        ):
+                            continue
+
+                        with rf.open(info) as f:
                             data = f.read()
                             text = try_decode(data)
                             if text is not None:
@@ -190,8 +235,13 @@ class Search:
                 with py7zr.SevenZipFile(file_path, mode='r') as archive:
                     for info in archive.list():
                         file_name = Path(info.filename)
-                        if self.archive_should_skip(file_name, 'content', not info.is_directory,
-                                                    info.is_directory, get_archive_path_size(info, '7z')):
+                        if self.archive_should_skip(
+                                file_name,
+                                'content',
+                                not info.is_directory,
+                                info.is_directory,
+                                get_archive_path_size(info, '7z')
+                        ):
                             continue
 
                         data = archive.read([info.filename])
@@ -212,8 +262,13 @@ class Search:
                 with tarfile.open(file_path, mode) as tf:
                     for member in tf.getmembers():
                         file_name = Path(member.name)
-                        if self.archive_should_skip(file_name, 'content', member.isfile(),
-                                                    member.isdir(), get_archive_path_size(member, file_ext)):
+                        if self.archive_should_skip(
+                                file_name,
+                                'content',
+                                member.isfile(),
+                                member.isdir(),
+                                get_archive_path_size(member, file_ext)
+                        ):
                             continue
 
                         f = tf.extractfile(member)
@@ -269,7 +324,7 @@ class Search:
                     matches.append(f'{p_parent}\\{highlighted_name}')
 
                 # Search for files and directories name inside archive files if archive is active
-                if self.archive and p_ext in ('zip', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+                if self.archive and p_ext in ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
                     for name in self.extract_names_from_archive(p_resolved, search_type):
                         if pattern.evaluate(name.name):
                             highlighted_name = highlight_text_safe(pattern, name.name)

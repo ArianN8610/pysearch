@@ -1,9 +1,10 @@
 import click
 from .searcher import Search
 from multiprocessing import Process
+from .utils import check_rar_backend
 
 
-def run_search_process(file, directory, content, ext, exclude_ext, search_instance):
+def run_search_process(file, directory, content, search_instance):
     """Performs the basic search operation"""
     total_results = 0
 
@@ -11,7 +12,7 @@ def run_search_process(file, directory, content, ext, exclude_ext, search_instan
     if file:
         total_results += search_instance.search('file').echo('Files', 'file')
     # Search for directories if requested and extension filters are not active.
-    if directory and not (ext or exclude_ext):
+    if directory:
         total_results += search_instance.search('directory').echo('Directories', 'directory')
     # Search for content inside files if requested.
     if content:
@@ -70,7 +71,7 @@ def run_search_process(file, directory, content, ext, exclude_ext, search_instan
 @click.option('--min-size', type=click.FLOAT, help='Minimum file/directory size (in MB).')
 # Archive options
 @click.option('--archive', is_flag=True,
-              help='Enable search within archive files (e.g. zip, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
+              help='Enable search within archive files (e.g. zip, rar, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
 @click.option('--arc-ext', multiple=True, type=click.STRING,
               help='Include files with these extensions inside archive files. Example: --arc-ext py --arc-ext js')
 @click.option('--arc-ee', multiple=True, type=click.STRING,
@@ -81,13 +82,19 @@ def run_search_process(file, directory, content, ext, exclude_ext, search_instan
               multiple=True, help='Directories or files to exclude from search for inside archive files.')
 @click.option('--arc-max', type=click.FLOAT, help='Maximum size of files in the archive (in MB).')
 @click.option('--arc-min', type=click.FLOAT, help='Minimum size of files in the archive (in MB).')
+@click.option('--rarfb', type=click.Path(exists=True, file_okay=True, dir_okay=False),
+              help='Path to RAR backend tool (e.g. UnRAR.exe, ...). '
+                   'Enter the file type in the query (e.g. unrar, bsdtar, unar, 7z).')
 # Output option
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
            re_include, re_exclude, word, expr, timeout, max_size, min_size, archive, arc_ext, arc_ee, arc_inc,
-           arc_exc, arc_max, arc_min, full_path, no_content):
+           arc_exc, arc_max, arc_min, rarfb, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
+
+    check_rar_backend(archive, rarfb, query)
+
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
         file = directory = content = True
@@ -133,7 +140,7 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
             p.join()
             click.echo(click.style(f"\nTimeout! Search exceeded {timeout} seconds and was stopped.", fg="red"))
     else:
-        run_search_process(file, directory, content, ext, exclude_ext, search_instance)
+        run_search_process(file, directory, content, search_instance)
 
 
 if __name__ == "__main__":
