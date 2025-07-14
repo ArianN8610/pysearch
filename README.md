@@ -27,7 +27,9 @@ pip install pseek
 ```sh
 git clone https://github.com/ArianN8610/pysearch.git
 cd pysearch
-pip install click==8.1.8 lark==1.2.2
+python -m venv venv
+[Activate venv]
+pip install click==8.1.8 lark==1.2.2 py7zr==1.0.0 rarfile==4.2 rapidfuzz==3.13.0
 ```
 
 ## Usage
