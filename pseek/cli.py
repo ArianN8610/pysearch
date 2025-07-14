@@ -23,7 +23,6 @@ def run_search_process(file, directory, content, search_instance):
     click.echo(click.style(message, fg='red'))
 
 
-
 @click.command()
 @click.argument('query')
 @click.option('-p', '--path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
@@ -52,6 +51,9 @@ def run_search_process(file, directory, content, search_instance):
                    'Examples: r"foo.*bar", wc"Foo", cr".*Foo", ...)')
 @click.option('--timeout', type=click.INT,
               help='To stop the search after a specified period of time (Seconds)')
+@click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching).')
+@click.option('--fuzzy-level', type=click.IntRange(0, 99), default=80, show_default=True,
+              help='Similarity threshold from 0 to 99 for fuzzy search.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -89,11 +91,28 @@ def run_search_process(file, directory, content, search_instance):
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
-           re_include, re_exclude, word, expr, timeout, max_size, min_size, archive, arc_ext, arc_ee, arc_inc,
-           arc_exc, arc_max, arc_min, rarfb, full_path, no_content):
+           re_include, re_exclude, word, expr, timeout, fuzzy, fuzzy_level, max_size, min_size, archive, arc_ext,
+           arc_ee, arc_inc, arc_exc, arc_max, arc_min, rarfb, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
 
     check_rar_backend(archive, rarfb, query)
+
+    if not expr and fuzzy:
+        if not word:
+            click.echo(
+                click.style(
+                    "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.\n",
+                    fg="yellow"
+                )
+            )
+        else:
+            click.echo(
+                click.style(
+                    'Warning: When using "--fuzzy" and "--word", it is better to have the query be a word and '
+                    'not a phrase, as this will cause errors in the results.\n',
+                    fg="yellow"
+                )
+            )
 
     # If no search type is specified, search in all types.
     if not any((file, directory, content)):
@@ -113,6 +132,8 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         re_exclude=re_exclude,
         whole_word=word,
         expr=expr,
+        fuzzy=fuzzy,
+        fuzzy_level=fuzzy_level,
         max_size=max_size,
         min_size=min_size,
         archive=archive,

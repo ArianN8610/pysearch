@@ -2,7 +2,7 @@ import mmap
 import click
 from pathlib import Path
 from .utils import compile_regex, get_archive_path_size, try_decode
-from .parser import parse_query_expression, TermNode, highlight_text_safe
+from .parser import parse_query_expression, TermNode, highlight_text
 from concurrent.futures import ThreadPoolExecutor
 import zipfile
 import py7zr
@@ -30,8 +30,8 @@ EXCLUDED_EXTENSIONS = (
 
 class Search:
     def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, re_include,
-                 re_exclude, whole_word, expr, max_size, min_size, archive, arc_ext, arc_ee, arc_inc, arc_exc,
-                 arc_max, arc_min, full_path, no_content):
+                 re_exclude, whole_word, expr, fuzzy, fuzzy_level, max_size, min_size, archive, arc_ext, arc_ee,
+                 arc_inc, arc_exc, arc_max, arc_min, full_path, no_content):
         """Initialize search parameters"""
         self.base_path = Path(base_path)
         self.query = query
@@ -45,6 +45,8 @@ class Search:
         self.re_exclude = compile_regex(re_exclude)
         self.whole_word = whole_word
         self.expr = expr
+        self.fuzzy = fuzzy
+        self.fuzzy_level = fuzzy_level
         self.max_size = max_size
         self.min_size = min_size
         self.archive = archive
@@ -301,7 +303,8 @@ class Search:
 
     def search(self, search_type: str):
         """Main search function. search_type can be 'file', 'directory' or 'content'"""
-        pattern = parse_query_expression(self.query, self.expr, self.regex, self.whole_word, self.case_sensitive)
+        pattern = parse_query_expression(self.query, self.expr, self.regex, self.whole_word, self.case_sensitive,
+                                         self.fuzzy, self.fuzzy_level)
 
         if search_type in ('file', 'directory'):
             matches = []
@@ -320,14 +323,14 @@ class Search:
 
                 if pattern.evaluate(p.name) and not (search_type == 'directory' and p_resolved.is_file()):
                     # Highlight matched query in the name
-                    highlighted_name = highlight_text_safe(pattern, p.name)
+                    highlighted_name = highlight_text(pattern, p.name, self.fuzzy)
                     matches.append(f'{p_parent}\\{highlighted_name}')
 
                 # Search for files and directories name inside archive files if archive is active
                 if self.archive and p_ext in ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
                     for name in self.extract_names_from_archive(p_resolved, search_type):
                         if pattern.evaluate(name.name):
-                            highlighted_name = highlight_text_safe(pattern, name.name)
+                            highlighted_name = highlight_text(pattern, name.name, self.fuzzy)
                             matches.append(f'{p_parent}\\{p.name}::{name.parent}\\{highlighted_name}')
         else:  # content search
             # Use dictionary: key: file path (colored), value: list of line matches
@@ -375,7 +378,7 @@ class Search:
 
                                 count = pattern.count_matches(line) if isinstance(pattern, TermNode) else 0
                                 # Highlight the matching parts in green
-                                highlighted = highlight_text_safe(pattern, line)
+                                highlighted = highlight_text(pattern, line, self.fuzzy)
                                 # Show a note if the pattern repeats 3 or more times
                                 count_query = f' - Repeated {count} times' if count >= 3 else ''
                                 # Format the output line with line number and highlighted matches
@@ -427,7 +430,7 @@ class Search:
                                         return
                                     count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
                                     # Highlight the matching parts in green
-                                    highlighted = highlight_text_safe(pattern, line_decoded)
+                                    highlighted = highlight_text(pattern, line_decoded, self.fuzzy)
                                     # Show a note if the pattern repeats 3 or more times
                                     count_query = f' - Repeated {count} times' if count >= 3 else ''
                                     # Format the output line with line number and highlighted matches

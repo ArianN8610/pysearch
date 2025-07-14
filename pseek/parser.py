@@ -3,6 +3,7 @@ import sys
 import click
 from lark import Lark, Transformer
 from .utils import compile_regex
+from rapidfuzz import fuzz
 
 
 class ExprNode:
@@ -13,31 +14,64 @@ class ExprNode:
 
 class TermNode(ExprNode):
     """Node representing a single search term"""
-    def __init__(self, term: str, regex, whole_word, case_sensitive):
+    def __init__(self, term: str, regex, whole_word, case_sensitive, fuzzy, fuzzy_level):
         self.raw_term = term
         self.whole_word = whole_word
         self.case_sensitive = case_sensitive
+        self.fuzzy = fuzzy
+        self.fuzzy_level = fuzzy_level
 
-        flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
+        if not fuzzy:
+            flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
 
-        # Build the regex pattern
-        if not regex:
-            term = re.escape(term)  # Escape if not regex
-            # Apply whole-word matching only if not using regex (or if desired behavior is defined)
-            if whole_word:
-                term = r'\b' + term + r'\b'
+            # Build the regex pattern
+            if not regex:
+                term = re.escape(term)  # Escape if not regex
+                # Apply whole-word matching only if not using regex (or if desired behavior is defined)
+                if whole_word:
+                    term = r'\b' + term + r'\b'
 
-        self.pattern = compile_regex(term, flags)  # Precompile the regex pattern for performance
+            self.pattern = compile_regex(term, flags)  # Precompile the regex pattern for performance
 
     def evaluate(self, text: str) -> bool:
-        return bool(self.pattern.search(text))
+        if not self.fuzzy:
+            return bool(self.pattern.search(text))
+
+        # Fuzzy search mode
+        text_cmp = text if self.case_sensitive else text.lower()
+        term = self.raw_term if self.case_sensitive else self.raw_term.lower()
+
+        if self.whole_word:
+            words = re.findall(r'\w+', text_cmp)
+            return any(fuzz.ratio(term, word) >= self.fuzzy_level for word in words)
+        else:
+            # Use the correct method depending on the len of str to increase accuracy and avoid illogical matching
+            if len(text_cmp) > len(term):
+                score = fuzz.partial_ratio(term, text_cmp)
+            else:
+                score = fuzz.ratio(term, text_cmp)
+            return score >= self.fuzzy_level
+
 
     def count_matches(self, text: str) -> int:
-        """Count how many times the pattern appears in the text"""
-        return len(list(self.pattern.finditer(text)))
+        """Count how many times the pattern or fuzzy term appears in the text"""
+        if not self.fuzzy:
+            return len(list(self.pattern.finditer(text)))
+
+        text_cmp = text if self.case_sensitive else text.lower()
+        term = self.raw_term if self.case_sensitive else self.raw_term.lower()
+
+        if self.whole_word:
+            words = re.findall(r'\w+', text_cmp)
+            return sum(1 for word in words if fuzz.ratio(term, word) >= self.fuzzy_level)
+
+        # Optionally could implement a sliding window here, but it's expensive
+        return 0
 
     def get_binary_pattern(self) -> re.Pattern:
         """Return a compiled binary regex pattern"""
+        if self.fuzzy:
+            raise NotImplementedError("Binary pattern is not supported for fuzzy matching.")
         return re.compile(self.pattern.pattern.encode("utf-8"), self.pattern.flags)
 
 
@@ -99,8 +133,10 @@ PREFIXED_STRING: /(r|c|w|rc|cr|cw|wc)"([^"\\]|\\.)*"/
 
 class TreeToExpr(Transformer):
     """Transform parsed tree into expression tree (ExprNode subclasses)"""
-    def __init__(self):
+    def __init__(self, fuzzy, fuzzy_level):
         super().__init__()
+        self.fuzzy = fuzzy
+        self.fuzzy_level = fuzzy_level
 
     def string(self, s):
         """ Match normal quoted string: "foo" """
@@ -109,7 +145,9 @@ class TreeToExpr(Transformer):
             term,
             False,
             False,
-            False
+            False,
+            self.fuzzy,
+            self.fuzzy_level
         )
 
     def prefixed_string(self, s):
@@ -122,6 +160,8 @@ class TreeToExpr(Transformer):
             regex='r' in prefix,
             whole_word='w' in prefix,
             case_sensitive='c' in prefix,
+            fuzzy=self.fuzzy,
+            fuzzy_level=self.fuzzy_level
         )
 
     def and_expr(self, args):
@@ -134,48 +174,72 @@ class TreeToExpr(Transformer):
         return NotNode(args[0])
 
 
-def parse_query_expression(query: str, expr, regex, whole_word, case_sensitive) -> ExprNode:
+def parse_query_expression(query: str, expr, regex, whole_word, case_sensitive, fuzzy, fuzzy_level) -> ExprNode:
     """
     Function to parse the query and return expression tree.
     If expr is False, treat the whole query as a single term.
     """
 
     if not expr:
-        return TermNode(query, regex, whole_word, case_sensitive)
+        return TermNode(query, regex, whole_word, case_sensitive, fuzzy, fuzzy_level)
 
     # Otherwise, parse using Lark
     parser = Lark(query_grammar, parser="lalr")
     try:
         tree = parser.parse(query)
-        return TreeToExpr().transform(tree)
+        return TreeToExpr(fuzzy, fuzzy_level).transform(tree)
     except Exception as e:
         click.echo(click.style("Query parser error:\n\n", fg='red') + str(e))
         sys.exit(1)
 
 
-def highlight_text_safe(expr: ExprNode, text: str) -> str:
+def highlight_text(expr: ExprNode, text: str, fuzzy: bool) -> str:
+    """
+    Highlight matching parts of the text.
+    Only highlights fuzzy matches when whole_word=True.
+    """
     matches = []
 
     def collect_matches(node):
         if isinstance(node, TermNode):
-            for match in node.pattern.finditer(text):
-                matches.append((match.start(), match.end()))
-        elif isinstance(node, (AndNode, OrNode)):
+            # Skip fuzzy highlight if whole_word is False
+            if node.fuzzy:
+                if not node.whole_word:
+                    return  # skip highlighting
+                text_cmp = text if node.case_sensitive else text.lower()
+                term = node.raw_term if node.case_sensitive else node.raw_term.lower()
+
+                # collect word matches
+                for match in re.finditer(r'\w+', text_cmp):
+                    word = match.group()
+                    if fuzz.ratio(term, word) >= node.fuzzy_level:
+                        matches.append((match.start(), match.end()))
+            else:
+                for match in node.pattern.finditer(text):
+                    matches.append((match.start(), match.end()))
+        elif isinstance(node, AndNode) or isinstance(node, OrNode):
             collect_matches(node.left)
             collect_matches(node.right)
         elif isinstance(node, NotNode):
             collect_matches(node.child)
 
+    # If fuzzy is enabled but whole_word is False, return plain text
+    if fuzzy and isinstance(expr, TermNode) and not expr.whole_word:
+        return text
+
     collect_matches(expr)
 
-    # Remove overlaps (for example, if one match was inside another match)
+    # Sort and merge overlapping matches (for example, if one match was inside another match)
     matches.sort()  # sort by start position
     merged = []
     for start, end in matches:
         if not merged or start >= merged[-1][1]:  # no overlap
             merged.append((start, end))
+        else:
+            # Merge overlapping
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
 
-    # Create the final text with highlight
+    # Build highlighted text
     result = []
     last = 0
     for start, end in merged:
