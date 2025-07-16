@@ -123,7 +123,7 @@ query_grammar = r"""
      | ESCAPED_STRING           -> string
      | "(" expr ")"
 
-PREFIXED_STRING: /(r|c|w|rc|cr|cw|wc)"([^"\\]|\\.)*"/
+PREFIXED_STRING: /(r|c|w|f|rc|cr|cw|wc|cf|fc|wf|fw|cwf|cfw|wcf|wfc|fcw|fwc)"([^"\\]|\\.)*"/
 
 %import common.ESCAPED_STRING
 %import common.WS
@@ -133,9 +133,8 @@ PREFIXED_STRING: /(r|c|w|rc|cr|cw|wc)"([^"\\]|\\.)*"/
 
 class TreeToExpr(Transformer):
     """Transform parsed tree into expression tree (ExprNode subclasses)"""
-    def __init__(self, fuzzy, fuzzy_level):
+    def __init__(self, fuzzy_level):
         super().__init__()
-        self.fuzzy = fuzzy
         self.fuzzy_level = fuzzy_level
 
     def string(self, s):
@@ -146,8 +145,8 @@ class TreeToExpr(Transformer):
             False,
             False,
             False,
-            self.fuzzy,
-            self.fuzzy_level
+            False,
+            None
         )
 
     def prefixed_string(self, s):
@@ -160,7 +159,7 @@ class TreeToExpr(Transformer):
             regex='r' in prefix,
             whole_word='w' in prefix,
             case_sensitive='c' in prefix,
-            fuzzy=self.fuzzy,
+            fuzzy='f' in prefix,
             fuzzy_level=self.fuzzy_level
         )
 
@@ -187,7 +186,7 @@ def parse_query_expression(query: str, expr, regex, whole_word, case_sensitive, 
     parser = Lark(query_grammar, parser="lalr")
     try:
         tree = parser.parse(query)
-        return TreeToExpr(fuzzy, fuzzy_level).transform(tree)
+        return TreeToExpr(fuzzy_level).transform(tree)
     except Exception as e:
         click.echo(click.style("Query parser error:\n\n", fg='red') + str(e))
         sys.exit(1)
@@ -222,10 +221,6 @@ def highlight_text(expr: ExprNode, text: str, fuzzy: bool) -> str:
             collect_matches(node.right)
         elif isinstance(node, NotNode):
             collect_matches(node.child)
-
-    # If fuzzy is enabled but whole_word is False, return plain text
-    if fuzzy and isinstance(expr, TermNode) and not expr.whole_word:
-        return text
 
     collect_matches(expr)
 

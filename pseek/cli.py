@@ -46,12 +46,15 @@ def run_search_process(file, directory, content, search_instance):
                    'in which case you can make it match whole word by putting w before term: w"foo")')
 @click.option('--expr', is_flag=True,
               help='Enable to write conditions in the query. Example: r"foo.*bar" and ("bar" or "baz") and not "qux" '
-                   '(To use regex, word, and case-sensitive features, '
-                   'you can use the prefixes r, w, and c before terms. Allowed modes: r, w, c, wc, cw, rc, cr. '
-                   'Examples: r"foo.*bar", wc"Foo", cr".*Foo", ...)')
+                   '(To use regex, word, case-sensitive, and fuzzy features, '
+                   'you can use the prefixes r, w, c, and f before terms. Allowed modes: '
+                   'r, c, w, f, rc, cr, cw, wc, cf, fc, wf, fw, cwf, cfw, wcf, wfc, fcw, fwc. '
+                   'Examples: r"foo.*bar", wcf"Aple", cr".*Foo", ...)')
 @click.option('--timeout', type=click.INT,
               help='To stop the search after a specified period of time (Seconds)')
-@click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching).')
+@click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
+              'except when --expr is enabled, '
+              'in which case you can make it fuzzy by putting f before term: f"foo"')
 @click.option('--fuzzy-level', type=click.IntRange(0, 99), default=80, show_default=True,
               help='Similarity threshold from 0 to 99 for fuzzy search.')
 # Extension filters
@@ -105,7 +108,7 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
                     fg="yellow"
                 )
             )
-        else:
+        elif word and " " in query:
             click.echo(
                 click.style(
                     'Warning: When using "--fuzzy" and "--word", it is better to have the query be a word and '
