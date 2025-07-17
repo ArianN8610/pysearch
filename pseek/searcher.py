@@ -1,7 +1,7 @@
 import mmap
 import click
 from pathlib import Path
-from .utils import compile_regex, get_archive_path_size, try_decode
+from .utils import compile_regex, get_archive_path_size, try_decode, get_path_suffix
 from .parser import parse_query_expression, TermNode, highlight_text
 from concurrent.futures import ThreadPoolExecutor
 import zipfile
@@ -11,9 +11,10 @@ import gzip
 import bz2
 import lzma
 import rarfile
+import io
 
 # Archive extensions that are allowed
-ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tar.gz', 'tar.bz2', 'tar.xz')
+ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')
 
 # Extensions that are not suitable for content search (binary, media, etc.)
 EXCLUDED_EXTENSIONS = (
@@ -71,10 +72,10 @@ class Search:
             # If path is inaccessible, skip it.
             return True
 
-        file_ext = ''.join(p_resolved.suffixes)[1:].lower()
+        file_ext = get_path_suffix(p_resolved)
 
         # Ignore some filters for archive files when archive is enabled
-        if (not self.archive or not file_ext in ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz')) and \
+        if (not self.archive or not file_ext in ARCHIVE_EXTS[:-3]) and \
                 ((search_type in ('file', 'content') and not p_resolved.is_file())
                  or (search_type == 'directory' and not p_resolved.is_dir())):
             return True
@@ -96,11 +97,10 @@ class Search:
 
         return False
 
-
     def archive_should_skip(self, path_info: Path, search_type: str, is_file: bool, is_dir: bool, p_size: float):
         """Check whether the file/directory inside archive files should be skipped based on various filters"""
 
-        file_ext = ''.join(path_info.suffixes)[1:].lower()
+        file_ext = get_path_suffix(path_info)
 
         if (search_type in ('file', 'content') and not is_file) \
                 or (search_type == 'directory' and not is_dir):
@@ -122,14 +122,32 @@ class Search:
 
         return False
 
-    def extract_names_from_archive(self, file_path: Path, search_type: str):
-        """Extract files and directories name from archive files to search"""
+    def extract_names_from_archive(self, file_path: Path, search_type: str,
+                                   file_bytes: bytes = None, parent_label: str = ''):
+        """
+        Recursively extract files and directories name from archive files.
+        Supports nested archives like a.zip::b.7z::c.txt.
 
-        file_ext = ''.join(file_path.suffixes)[1:].lower()
+        Parameters:
+            file_path (Path): the archive file path
+            search_type (str): search type ( file / directory )
+            file_bytes (bytes | None): optional byte data if already read (for recursion)
+            parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+
+        Yields:
+            (str, Path): tuple of parent label and file or directory name
+        """
+
+        file_ext = get_path_suffix(file_path)
+        label_prefix = (parent_label + str(file_path) + '::') if parent_label else '::'
 
         try:
+            # Decide the stream source: from disk or memory
+            file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
+
+            # Handle ZIP archives
             if file_ext == 'zip':
-                with zipfile.ZipFile(file_path) as zf:
+                with zipfile.ZipFile(file_stream) as zf:
                     for info in zf.infolist():
                         name = Path(info.filename)
                         if not self.archive_should_skip(
@@ -139,9 +157,19 @@ class Search:
                                 info.is_dir(),
                                 get_archive_path_size(info, 'zip')
                         ):
-                            yield name
+                            yield label_prefix, name
+
+                        # Check if this is a nested archive
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                            yield from self.extract_names_from_archive(
+                                name,
+                                search_type,
+                                zf.read(info),
+                                label_prefix
+                            )
+            # Handle RAR archives
             elif file_ext == 'rar':
-                with rarfile.RarFile(file_path) as rf:
+                with rarfile.RarFile(file_stream) as rf:
                     for info in rf.infolist():
                         name = Path(info.filename)
                         if not self.archive_should_skip(
@@ -151,9 +179,18 @@ class Search:
                                 info.is_dir(),
                                 get_archive_path_size(info, 'rar')
                         ):
-                            yield name
+                            yield label_prefix, name
+
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                            yield from self.extract_names_from_archive(
+                                name,
+                                search_type,
+                                rf.read(info),
+                                label_prefix
+                            )
+            # Handle 7Z archives
             elif file_ext == '7z':
-                with py7zr.SevenZipFile(file_path, mode='r') as z:
+                with py7zr.SevenZipFile(file_stream, mode='r') as z:
                     for info in z.list():
                         name = Path(info.filename)
                         if not self.archive_should_skip(
@@ -163,18 +200,30 @@ class Search:
                                 info.is_directory,
                                 get_archive_path_size(info, '7z')
                         ):
-                            yield name
+                            yield label_prefix, name
+
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                            file_data = z.read([info.filename]).get(info.filename)
+                            if file_data is None:
+                                continue
+
+                            yield from self.extract_names_from_archive(
+                                name,
+                                search_type,
+                                file_data.read(),
+                                label_prefix
+                            )
+            # Handle TAR and compressed TAR formats
             elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
                 # Specify the mode based on the file ext to open it
-                mode = 'r'
-                if file_ext == 'tar.gz':
-                    mode = 'r:gz'
-                elif file_ext == 'tar.bz2':
-                    mode = 'r:bz2'
-                elif file_ext == 'tar.xz':
-                    mode = 'r:xz'
+                mode = {
+                    'tar': 'r',
+                    'tar.gz': 'r:gz',
+                    'tar.bz2': 'r:bz2',
+                    'tar.xz': 'r:xz'
+                }[file_ext]
 
-                with tarfile.open(file_path, mode) as tf:
+                with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                     for member in tf.getmembers():
                         name = Path(member.name)
                         if not self.archive_should_skip(
@@ -184,120 +233,155 @@ class Search:
                                 member.isdir(),
                                 get_archive_path_size(member, file_ext)
                         ):
-                            yield name
+                            yield label_prefix, name
+
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                            f = tf.extractfile(member)
+                            if f is None:
+                                continue
+
+                            yield from self.extract_names_from_archive(
+                                name,
+                                search_type,
+                                f.read(),
+                                label_prefix
+                            )
         except Exception:
             return  # silently skip invalid archives
 
-    def extract_text_from_archive(self, file_path: Path):
+    def extract_text_from_archive(self, file_path: Path, file_bytes: bytes = None, parent_label: str = ''):
         """
-        Generator yielding (filename, content_text) from archive files.
-        Supports zip, rar, tar, gz, bz2, xz, 7z.
+        Recursively extract (path_label, text_content) from any archive file.
+        Supports nested archives like a.zip::b.7z::c.txt.
+
+        Parameters:
+            file_path (Path): the archive file path
+            file_bytes (bytes | None): optional byte data if already read (for recursion)
+            parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+
+        Yields:
+            (str, str): tuple of full virtual path and decoded content text
         """
 
-        file_ext = ''.join(file_path.suffixes)[1:].lower()
+        file_ext = get_path_suffix(file_path)
+        label_prefix = (parent_label + str(file_path) + '::') if parent_label else '::'
 
         try:
+            # Decide the stream source: from disk or memory
+            file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
+
+            # Handle ZIP archives
             if file_ext == 'zip':
-                with zipfile.ZipFile(file_path) as zf:
+                with zipfile.ZipFile(file_stream) as zf:
                     for info in zf.infolist():
                         file_name = Path(info.filename)
-                        if self.archive_should_skip(
-                                file_name,
-                                'content',
-                                not info.is_dir(),
-                                info.is_dir(),
-                                get_archive_path_size(info, 'zip')
-                        ):
-                            continue
+                        data = zf.read(info)
 
-                        with zf.open(info) as f:
-                            data = f.read()
+                        # Check if this is a nested archive
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                        else:
+                            if self.archive_should_skip(
+                                    file_name,
+                                    'content',
+                                    not info.is_dir(),
+                                    info.is_dir(),
+                                    get_archive_path_size(info, 'zip')
+                            ):
+                                continue
+
                             text = try_decode(data)
                             if text is not None:
-                                yield info.filename, text
+                                yield label_prefix + str(file_name), text
+            # Handle RAR archives
             elif file_ext == 'rar':
-                with rarfile.RarFile(file_path) as rf:
+                with rarfile.RarFile(file_stream) as rf:
                     for info in rf.infolist():
                         file_name = Path(info.filename)
-                        if self.archive_should_skip(
-                                file_name,
-                                'content',
-                                not info.is_dir(),
-                                info.is_dir(),
-                                get_archive_path_size(info, 'rar')
-                        ):
-                            continue
+                        data = rf.read(info)
 
-                        with rf.open(info) as f:
-                            data = f.read()
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                        else:
+                            if self.archive_should_skip(
+                                    file_name,
+                                    'content',
+                                    not info.is_dir(),
+                                    info.is_dir(),
+                                    get_archive_path_size(info, 'rar')
+                            ):
+                                continue
+
                             text = try_decode(data)
                             if text is not None:
-                                yield info.filename, text
+                                yield label_prefix + str(file_name), text
+            # Handle 7Z archives
             elif file_ext == '7z':
-                with py7zr.SevenZipFile(file_path, mode='r') as archive:
+                with py7zr.SevenZipFile(file_stream, mode='r') as archive:
                     for info in archive.list():
+                        file_data = archive.read([info.filename]).get(info.filename)
+                        if file_data is None:
+                            continue
+
                         file_name = Path(info.filename)
-                        if self.archive_should_skip(
-                                file_name,
-                                'content',
-                                not info.is_directory,
-                                info.is_directory,
-                                get_archive_path_size(info, '7z')
-                        ):
-                            continue
+                        data = file_data.read()
 
-                        data = archive.read([info.filename])
-                        filedata = data.get(info.filename)
-                        if filedata is None:
-                            continue
-                        text = try_decode(filedata.read())
-                        if text is not None:
-                            yield info.filename, text
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                        else:
+                            if self.archive_should_skip(
+                                    file_name,
+                                    'content',
+                                    not info.is_directory,
+                                    info.is_directory,
+                                    get_archive_path_size(info, '7z')
+                            ):
+                                continue
+
+                            text = try_decode(data)
+                            if text is not None:
+                                yield label_prefix + str(file_name), text
+            # Handle TAR and compressed TAR formats
             elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
-                mode = 'r'
-                if file_ext == 'tar.gz':
-                    mode = 'r:gz'
-                elif file_ext == 'tar.bz2':
-                    mode = 'r:bz2'
-                elif file_ext == 'tar.xz':
-                    mode = 'r:xz'
-                with tarfile.open(file_path, mode) as tf:
-                    for member in tf.getmembers():
-                        file_name = Path(member.name)
-                        if self.archive_should_skip(
-                                file_name,
-                                'content',
-                                member.isfile(),
-                                member.isdir(),
-                                get_archive_path_size(member, file_ext)
-                        ):
-                            continue
+                mode = {
+                    'tar': 'r',
+                    'tar.gz': 'r:gz',
+                    'tar.bz2': 'r:bz2',
+                    'tar.xz': 'r:xz'
+                }[file_ext]
 
+                with tarfile.open(fileobj=file_stream, mode=mode) as tf:
+                    for member in tf.getmembers():
                         f = tf.extractfile(member)
                         if f is None:
                             continue
+
+                        file_name = Path(member.name)
                         data = f.read()
-                        text = try_decode(data)
-                        if text is not None:
-                            yield member.name, text
-            elif file_ext == 'gz':
-                with gzip.open(file_path, 'rb') as f:
+
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                        else:
+                            if self.archive_should_skip(
+                                    file_name,
+                                    'content',
+                                    member.isfile(),
+                                    member.isdir(),
+                                    get_archive_path_size(member, file_ext)
+                            ):
+                                continue
+
+                            text = try_decode(data)
+                            if text is not None:
+                                yield label_prefix + str(file_name), text
+            # Handle single compressed files like .gz, .bz2, .xz
+            elif file_ext in ARCHIVE_EXTS[-3:]:
+                opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_ext]
+                with opener(file_stream, 'rb') as f:
                     data = f.read()
                     text = try_decode(data)
                     if text is not None:
-                        yield file_path.name, text
-            elif file_ext == 'bz2':
-                with bz2.open(file_path, 'rb') as f:
-                    data = f.read()
-                    text = try_decode(data)
-                    if text is not None:
-                        yield file_path.name, text
-            elif file_ext == 'xz':
-                with lzma.open(file_path, 'rb') as f:
-                    data = f.read()
-                    text = try_decode(data)
-                    if text is not None:
-                        yield file_path.name, text
+                        yield file_ext, text
         except Exception:
             return
 
@@ -319,7 +403,7 @@ class Search:
 
                 # Choose parent path based on full_path flag
                 p_parent = p_resolved.parent if self.full_path else p.parent
-                p_ext = ''.join(p_resolved.suffixes)[1:].lower()
+                p_ext = get_path_suffix(p_resolved)
 
                 if pattern.evaluate(p.name) and not (search_type == 'directory' and p_resolved.is_file()):
                     # Highlight matched query in the name
@@ -327,11 +411,11 @@ class Search:
                     matches.append(f'{p_parent}\\{highlighted_name}')
 
                 # Search for files and directories name inside archive files if archive is active
-                if self.archive and p_ext in ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
-                    for name in self.extract_names_from_archive(p_resolved, search_type):
+                if self.archive and p_ext in ARCHIVE_EXTS[:-3]:
+                    for label, name in self.extract_names_from_archive(p_resolved, search_type):
                         if pattern.evaluate(name.name):
                             highlighted_name = highlight_text(pattern, name.name, self.fuzzy)
-                            matches.append(f'{p_parent}\\{p.name}::{name.parent}\\{highlighted_name}')
+                            matches.append(f'{p_parent}\\{p.name}{label}{name.parent}\\{highlighted_name}')
         else:  # content search
             # Use dictionary: key: file path (colored), value: list of line matches
             matches = {} if not self.no_content else set()
@@ -355,13 +439,14 @@ class Search:
                     file_label = str(file_path.resolve()) if self.full_path else str(file_path)
 
                     # First, check if the file is an archive, extract it from the archive and perform a search
-                    if self.archive and any(str(file_path).endswith(ext) for ext in ARCHIVE_EXTS):
+                    if self.archive and get_path_suffix(file_path) in ARCHIVE_EXTS:
                         for fname, content in self.extract_text_from_archive(file_path):
                             if not pattern.evaluate(content) and not self.expr:
                                 continue
 
-                            # Change file_label for archive files
-                            file_label += '::' + fname.replace('/', '\\')
+                            # Change file_label for archive files (zip, rar, 7z, tar)
+                            if fname not in ARCHIVE_EXTS[-3:]:
+                                file_label += fname
 
                             if self.no_content and not self.expr:
                                 matches.add(click.style(file_label, fg='cyan'))

@@ -95,4 +95,4 @@ pseek "error\d+" --regex
 ## Requirements
 
 * Python 3.6 or higher
-* `unrar`, `bsdtar`, `unar` or `7zip` for the rarfile library to support searching inside `.rar` files (optional)
+* `unrar`, `bsdtar`, `unar` or `7zip` for the [rarfile](https://pypi.org/project/rarfile/) library to support searching inside `.rar` files (optional)

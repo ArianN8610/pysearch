@@ -85,3 +85,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
                 rarfile.UNAR_TOOL = tool
             elif b == '7z':
                 rarfile.SEVENZIP_TOOL = tool
+
+
+def get_path_suffix(path: Path) -> str:
+    return ''.join(path.suffixes)[1:].lower()
