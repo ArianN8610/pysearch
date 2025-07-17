@@ -77,6 +77,8 @@ def run_search_process(file, directory, content, search_instance):
 # Archive options
 @click.option('--archive', is_flag=True,
               help='Enable search within archive files (e.g. zip, rar, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
+@click.option('--depth', type=click.IntRange(min=0), show_default=True,
+              help='Maximum archive depth to recurse into (e.g. 2 means only 2 levels).')
 @click.option('--arc-ext', multiple=True, type=click.STRING,
               help='Include files with these extensions inside archive files. Example: --arc-ext py --arc-ext js')
 @click.option('--arc-ee', multiple=True, type=click.STRING,
@@ -94,8 +96,8 @@ def run_search_process(file, directory, content, search_instance):
 @click.option('--full-path', is_flag=True, help='Display full paths for results.')
 @click.option('--no-content', is_flag=True, help='Only display files path for content search.')
 def search(query, path, file, directory, content, case_sensitive, ext, exclude_ext, regex, include, exclude,
-           re_include, re_exclude, word, expr, timeout, fuzzy, fuzzy_level, max_size, min_size, archive, arc_ext,
-           arc_ee, arc_inc, arc_exc, arc_max, arc_min, rarfb, full_path, no_content):
+           re_include, re_exclude, word, expr, timeout, fuzzy, fuzzy_level, max_size, min_size, archive, depth,
+           arc_ext, arc_ee, arc_inc, arc_exc, arc_max, arc_min, rarfb, full_path, no_content):
     """Search for files, directories, and file content based on the query."""
 
     check_rar_backend(archive, rarfb, query)
@@ -140,6 +142,7 @@ def search(query, path, file, directory, content, case_sensitive, ext, exclude_e
         max_size=max_size,
         min_size=min_size,
         archive=archive,
+        depth=depth,
         arc_ext=arc_ext,
         arc_ee=arc_ee,
         arc_inc=arc_inc,

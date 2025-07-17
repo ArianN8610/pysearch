@@ -31,7 +31,7 @@ EXCLUDED_EXTENSIONS = (
 
 class Search:
     def __init__(self, base_path, query, case_sensitive, ext, exclude_ext, regex, include, exclude, re_include,
-                 re_exclude, whole_word, expr, fuzzy, fuzzy_level, max_size, min_size, archive, arc_ext, arc_ee,
+                 re_exclude, whole_word, expr, fuzzy, fuzzy_level, max_size, min_size, archive, depth, arc_ext, arc_ee,
                  arc_inc, arc_exc, arc_max, arc_min, full_path, no_content):
         """Initialize search parameters"""
         self.base_path = Path(base_path)
@@ -51,6 +51,7 @@ class Search:
         self.max_size = max_size
         self.min_size = min_size
         self.archive = archive
+        self.depth = depth
         self.arc_ext = set(arc_ext)
         self.arc_ee = set(arc_ee) | {''} if arc_ee else set()
         self.arc_inc = {Path(p) for p in arc_inc}
@@ -145,47 +146,29 @@ class Search:
             # Decide the stream source: from disk or memory
             file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
 
-            # Handle ZIP archives
-            if file_ext == 'zip':
-                with zipfile.ZipFile(file_stream) as zf:
-                    for info in zf.infolist():
+            # Handle ZIP and RAR archives
+            if file_ext in ('zip', 'rar'):
+                opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_ext]
+                with opener(file_stream) as f:
+                    for info in f.infolist():
                         name = Path(info.filename)
                         if not self.archive_should_skip(
                                 name,
                                 search_type,
                                 not info.is_dir(),
                                 info.is_dir(),
-                                get_archive_path_size(info, 'zip')
+                                get_archive_path_size(info, file_ext)
                         ):
                             yield label_prefix, name
 
+                        # At each recursion, subtract 1 from depth if it's set
+                        new_depth = None if self.depth is None else self.depth - 1
                         # Check if this is a nested archive
-                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             yield from self.extract_names_from_archive(
                                 name,
                                 search_type,
-                                zf.read(info),
-                                label_prefix
-                            )
-            # Handle RAR archives
-            elif file_ext == 'rar':
-                with rarfile.RarFile(file_stream) as rf:
-                    for info in rf.infolist():
-                        name = Path(info.filename)
-                        if not self.archive_should_skip(
-                                name,
-                                search_type,
-                                not info.is_dir(),
-                                info.is_dir(),
-                                get_archive_path_size(info, 'rar')
-                        ):
-                            yield label_prefix, name
-
-                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
-                            yield from self.extract_names_from_archive(
-                                name,
-                                search_type,
-                                rf.read(info),
+                                f.read(info),
                                 label_prefix
                             )
             # Handle 7Z archives
@@ -202,7 +185,8 @@ class Search:
                         ):
                             yield label_prefix, name
 
-                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                        new_depth = None if self.depth is None else self.depth - 1
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             file_data = z.read([info.filename]).get(info.filename)
                             if file_data is None:
                                 continue
@@ -235,7 +219,8 @@ class Search:
                         ):
                             yield label_prefix, name
 
-                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3]:
+                        new_depth = None if self.depth is None else self.depth - 1
+                        if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             f = tf.extractfile(member)
                             if f is None:
                                 continue
@@ -270,15 +255,18 @@ class Search:
             # Decide the stream source: from disk or memory
             file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
 
-            # Handle ZIP archives
-            if file_ext == 'zip':
-                with zipfile.ZipFile(file_stream) as zf:
-                    for info in zf.infolist():
+            # Handle ZIP and RAR archives
+            if file_ext in ('zip', 'rar'):
+                opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_ext]
+                with opener(file_stream) as f:
+                    for info in f.infolist():
                         file_name = Path(info.filename)
-                        data = zf.read(info)
+                        data = f.read(info)
+                        # At each recursion, subtract 1 from depth if it's set
+                        new_depth = None if self.depth is None else self.depth - 1
 
                         # Check if this is a nested archive
-                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
                             yield from self.extract_text_from_archive(file_name, data, label_prefix)
                         else:
                             if self.archive_should_skip(
@@ -286,29 +274,7 @@ class Search:
                                     'content',
                                     not info.is_dir(),
                                     info.is_dir(),
-                                    get_archive_path_size(info, 'zip')
-                            ):
-                                continue
-
-                            text = try_decode(data)
-                            if text is not None:
-                                yield label_prefix + str(file_name), text
-            # Handle RAR archives
-            elif file_ext == 'rar':
-                with rarfile.RarFile(file_stream) as rf:
-                    for info in rf.infolist():
-                        file_name = Path(info.filename)
-                        data = rf.read(info)
-
-                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
-                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
-                        else:
-                            if self.archive_should_skip(
-                                    file_name,
-                                    'content',
-                                    not info.is_dir(),
-                                    info.is_dir(),
-                                    get_archive_path_size(info, 'rar')
+                                    get_archive_path_size(info, file_ext)
                             ):
                                 continue
 
@@ -325,8 +291,9 @@ class Search:
 
                         file_name = Path(info.filename)
                         data = file_data.read()
+                        new_depth = None if self.depth is None else self.depth - 1
 
-                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
                             yield from self.extract_text_from_archive(file_name, data, label_prefix)
                         else:
                             if self.archive_should_skip(
@@ -358,8 +325,9 @@ class Search:
 
                         file_name = Path(member.name)
                         data = f.read()
+                        new_depth = None if self.depth is None else self.depth - 1
 
-                        if get_path_suffix(file_name) in ARCHIVE_EXTS:
+                        if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
                             yield from self.extract_text_from_archive(file_name, data, label_prefix)
                         else:
                             if self.archive_should_skip(
