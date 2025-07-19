@@ -1,17 +1,10 @@
-import mmap
-import click
+import mmap, click, io
 from pathlib import Path
 from .utils import compile_regex, get_archive_path_size, try_decode, get_path_suffix
 from .parser import parse_query_expression, TermNode, highlight_text
 from concurrent.futures import ThreadPoolExecutor
-import zipfile
-import py7zr
-import tarfile
-import gzip
-import bz2
-import lzma
-import rarfile
-import io
+# Archive modules
+import zipfile, py7zr, tarfile, gzip, bz2, lzma, rarfile
 
 # Archive extensions that are allowed
 ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')
@@ -124,7 +117,8 @@ class Search:
         return False
 
     def extract_names_from_archive(self, file_path: Path, search_type: str,
-                                   file_bytes: bytes = None, parent_label: str = ''):
+                                   file_bytes: bytes = None, parent_label: str = '',
+                                   depth: int = None):
         """
         Recursively extract files and directories name from archive files.
         Supports nested archives like a.zip::b.7z::c.txt.
@@ -134,6 +128,7 @@ class Search:
             search_type (str): search type ( file / directory )
             file_bytes (bytes | None): optional byte data if already read (for recursion)
             parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+            depth (int): the depth value that is returned recursively
 
         Yields:
             (str, Path): tuple of parent label and file or directory name
@@ -141,6 +136,8 @@ class Search:
 
         file_ext = get_path_suffix(file_path)
         label_prefix = (parent_label + str(file_path) + '::') if parent_label else '::'
+        if depth is None:
+            depth = self.depth
 
         try:
             # Decide the stream source: from disk or memory
@@ -162,14 +159,15 @@ class Search:
                             yield label_prefix, name
 
                         # At each recursion, subtract 1 from depth if it's set
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
                         # Check if this is a nested archive
                         if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             yield from self.extract_names_from_archive(
                                 name,
                                 search_type,
                                 f.read(info),
-                                label_prefix
+                                label_prefix,
+                                new_depth
                             )
             # Handle 7Z archives
             elif file_ext == '7z':
@@ -185,7 +183,7 @@ class Search:
                         ):
                             yield label_prefix, name
 
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
                         if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             file_data = z.read([info.filename]).get(info.filename)
                             if file_data is None:
@@ -195,7 +193,8 @@ class Search:
                                 name,
                                 search_type,
                                 file_data.read(),
-                                label_prefix
+                                label_prefix,
+                                new_depth
                             )
             # Handle TAR and compressed TAR formats
             elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
@@ -219,7 +218,7 @@ class Search:
                         ):
                             yield label_prefix, name
 
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
                         if get_path_suffix(name) in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             f = tf.extractfile(member)
                             if f is None:
@@ -229,12 +228,14 @@ class Search:
                                 name,
                                 search_type,
                                 f.read(),
-                                label_prefix
+                                label_prefix,
+                                new_depth
                             )
         except Exception:
             return  # silently skip invalid archives
 
-    def extract_text_from_archive(self, file_path: Path, file_bytes: bytes = None, parent_label: str = ''):
+    def extract_text_from_archive(self, file_path: Path, file_bytes: bytes = None,
+                                  parent_label: str = '', depth: int = None):
         """
         Recursively extract (path_label, text_content) from any archive file.
         Supports nested archives like a.zip::b.7z::c.txt.
@@ -243,6 +244,7 @@ class Search:
             file_path (Path): the archive file path
             file_bytes (bytes | None): optional byte data if already read (for recursion)
             parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+            depth (int): the depth value that is returned recursively
 
         Yields:
             (str, str): tuple of full virtual path and decoded content text
@@ -250,6 +252,8 @@ class Search:
 
         file_ext = get_path_suffix(file_path)
         label_prefix = (parent_label + str(file_path) + '::') if parent_label else '::'
+        if depth is None:
+            depth = self.depth
 
         try:
             # Decide the stream source: from disk or memory
@@ -263,11 +267,11 @@ class Search:
                         file_name = Path(info.filename)
                         data = f.read(info)
                         # At each recursion, subtract 1 from depth if it's set
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
 
                         # Check if this is a nested archive
                         if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix, new_depth)
                         else:
                             if self.archive_should_skip(
                                     file_name,
@@ -291,10 +295,10 @@ class Search:
 
                         file_name = Path(info.filename)
                         data = file_data.read()
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
 
                         if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix, new_depth)
                         else:
                             if self.archive_should_skip(
                                     file_name,
@@ -325,10 +329,10 @@ class Search:
 
                         file_name = Path(member.name)
                         data = f.read()
-                        new_depth = None if self.depth is None else self.depth - 1
+                        new_depth = None if depth is None else depth - 1
 
                         if get_path_suffix(file_name) in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                            yield from self.extract_text_from_archive(file_name, data, label_prefix)
+                            yield from self.extract_text_from_archive(file_name, data, label_prefix, new_depth)
                         else:
                             if self.archive_should_skip(
                                     file_name,
@@ -431,7 +435,7 @@ class Search:
 
                                 count = pattern.count_matches(line) if isinstance(pattern, TermNode) else 0
                                 # Highlight the matching parts in green
-                                highlighted = highlight_text(pattern, line, self.fuzzy)
+                                highlighted = highlight_text(pattern, line.strip(), self.fuzzy)
                                 # Show a note if the pattern repeats 3 or more times
                                 count_query = f' - Repeated {count} times' if count >= 3 else ''
                                 # Format the output line with line number and highlighted matches
