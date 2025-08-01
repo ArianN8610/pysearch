@@ -1,6 +1,4 @@
-import re
-import sys
-import click
+import re, sys, click
 from lark import Lark, Transformer
 from .utils import compile_regex
 from rapidfuzz import fuzz

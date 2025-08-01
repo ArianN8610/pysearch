@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pseek"
-version = "2.5.3"
+version = "2.5.4"
 description = "Pseek is a Python library to search files, folders, and text"
 readme = "README.md"
 license = "MIT"
@@ -24,3 +24,9 @@ urls = {Homepage = "https://github.com/ArianN8610/pysearch"}
 
 [project.scripts]
 pseek = "pseek.cli:search"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"pseek" = ["extensions"]

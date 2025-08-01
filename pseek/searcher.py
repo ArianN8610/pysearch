@@ -69,7 +69,7 @@ class Search:
         file_ext = get_path_suffix(p_resolved)
 
         # Ignore some filters for archive files when archive is enabled
-        if (not self.archive or not file_ext in ARCHIVE_EXTS[:-3]) and \
+        if (not self.archive or file_ext not in ARCHIVE_EXTS[:-3]) and \
                 ((search_type in ('file', 'content') and not p_resolved.is_file())
                  or (search_type == 'directory' and not p_resolved.is_dir())):
             return True
